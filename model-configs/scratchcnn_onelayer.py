@@ -43,3 +43,4 @@ epoch = 1000                                        # Number of epochs
 early_stopping = 50                                 # Threshold value for early stopping of algorithm
 batch_size = 32                                     # The size of batch inputs
 learning_rate = 1e-4                                # The learning rate of the optimising algorithm
+loss = "SAD"                                        # Loss function to be optimized (SAD or MSE)

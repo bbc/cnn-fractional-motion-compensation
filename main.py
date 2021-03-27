@@ -31,7 +31,8 @@
 from model_scratch import ScratchCNN, ScratchActCNN, ScratchBiasCNN, ScratchAllCNN, ScratchOneCNN, SRCNN
 from model_shared import SharedCNN
 from model_competition import CompetitionCNN
-from utils import import_path
+from utils import import_path, frac_positions
+from itertools import product
 import tensorflow as tf
 import os
 import argparse
@@ -55,38 +56,48 @@ if __name__ == '__main__':
     os.makedirs(model_cfg.results_dir, exist_ok=True)
     os.makedirs(model_cfg.graphs_dir, exist_ok=True)
 
-    tf.reset_default_graph()
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_fraction)
-    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
+    # loop through all fractional shifts and QPs the network has to be trained for
+    combined = 1 if model_cfg.model_name == "sharedcnn" or model_cfg.model_name == "competitioncnn" else 0
+    frac_xy = ["all"] if combined else frac_positions()
+    qp_list = [27] if combined else [22, 27, 32, 37]
 
-        # initialise the specified cnn model
-        if model_cfg.model_name == "scratchcnn":
-            cnn_model = ScratchCNN(sess, model_cfg)
-        elif model_cfg.model_name == "scratchcnn_activation":
-            cnn_model = ScratchActCNN(sess, model_cfg)
-        elif model_cfg.model_name == "scratchcnn_bias":
-            cnn_model = ScratchBiasCNN(sess, model_cfg)
-        elif model_cfg.model_name == "scratchcnn_all":
-            cnn_model = ScratchAllCNN(sess, model_cfg)
-        elif model_cfg.model_name == "scratchcnn_onelayer":
-            cnn_model = ScratchOneCNN(sess, model_cfg)
-        elif model_cfg.model_name == "srcnn":
-            cnn_model = SRCNN(sess, model_cfg)
-        elif model_cfg.model_name == "sharedcnn":
-            cnn_model = SharedCNN(sess, model_cfg)
-        elif model_cfg.model_name == "competitioncnn":
-            cnn_model = CompetitionCNN(sess, model_cfg)
-        else:
-            raise ValueError("Invalid model name specified!")
+    # prepare dictionaries that will store the corresponding filters
+    for frac, qp in product(frac_xy, qp_list):
+        model_cfg.fractional_pixel = frac
+        model_cfg.qp = qp
 
-        # train or test the model
-        if args.action == "train":
-            if not os.path.exists(model_cfg.dataset_dir):
-                raise ValueError("Invalid training dataset directory specified!")
-            cnn_model.train()
-        elif args.action == "test":
-            if not os.path.exists(model_cfg.test_dataset_dir):
-                raise ValueError("Invalid testing dataset directory specified!")
-            cnn_model.test()
-        else:
-            raise ValueError("Invalid action specified!")
+        tf.reset_default_graph()
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_fraction)
+        with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
+
+            # initialise the specified cnn model
+            if model_cfg.model_name == "scratchcnn":
+                cnn_model = ScratchCNN(sess, model_cfg)
+            elif model_cfg.model_name == "scratchcnn_activation":
+                cnn_model = ScratchActCNN(sess, model_cfg)
+            elif model_cfg.model_name == "scratchcnn_bias":
+                cnn_model = ScratchBiasCNN(sess, model_cfg)
+            elif model_cfg.model_name == "scratchcnn_all":
+                cnn_model = ScratchAllCNN(sess, model_cfg)
+            elif model_cfg.model_name == "scratchcnn_onelayer":
+                cnn_model = ScratchOneCNN(sess, model_cfg)
+            elif model_cfg.model_name == "srcnn":
+                cnn_model = SRCNN(sess, model_cfg)
+            elif model_cfg.model_name == "sharedcnn":
+                cnn_model = SharedCNN(sess, model_cfg)
+            elif model_cfg.model_name == "competitioncnn":
+                cnn_model = CompetitionCNN(sess, model_cfg)
+            else:
+                raise ValueError("Invalid model name specified!")
+
+            # train or test the model
+            if args.action == "train":
+                if not os.path.exists(model_cfg.dataset_dir):
+                    raise ValueError("Invalid training dataset directory specified!")
+                cnn_model.train()
+            elif args.action == "test":
+                if not os.path.exists(model_cfg.test_dataset_dir):
+                    raise ValueError("Invalid testing dataset directory specified!")
+                cnn_model.test()
+            else:
+                raise ValueError("Invalid action specified!")

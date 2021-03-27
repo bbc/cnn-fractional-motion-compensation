@@ -37,7 +37,7 @@ qp_list = [27]                       # List of Quantization Parameters (QPs) for
 sequence = "blowingbubbles"          # Name of the video sequence
 size = (416, 240)                    # (width, height) of the YUV sequence
 
-max_block_exp = 8                    # Maximum rectangular block size exponent (f.e. 6 = max block size of 32x32)
-kernel_size = 13                     # Combined size of convolutional kernels (f.e. 9x9, 1x1, 5x5 = 13)
+max_block_exp = 8                    # Maximum rectangular block size exponent (e.g. 6 = max block size of 32x32)
+kernel_size = 13                     # Combined size of convolutional kernels (e.g. 9x9, 1x1, 5x5 = 13x13)
 
 dataset_path = "../dataset/"         # Directory where the dataset will be saved

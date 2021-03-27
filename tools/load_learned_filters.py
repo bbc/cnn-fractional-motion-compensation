@@ -34,13 +34,61 @@ import os
 import pandas as pd
 import argparse
 from itertools import product
-from model_scratch import ScratchCNN, ScratchActCNN, ScratchBiasCNN, ScratchAllCNN, ScratchOneCNN
+from model_scratch import ScratchCNN, ScratchOneCNN
 from model_shared import SharedCNN
 from model_competition import CompetitionCNN
-from utils import import_path
+from utils import import_path, frac_positions, nested_dict, vvc_filters_2d, zncc
+
+
+def write_to_txt(file, qp_range, filter_dict):
+    """
+    Write to file that will contain the C++ array with filter coefficients
+    :param file: .txt file to be written to
+    :param qp_range: list of QPs for which the network has been trained
+    :param filter_dict: dictionary of learned filter, separated by fractional shift and, optionally, QP
+    """
+    single_qp = 1 if len(qp_range) == 1 else 0
+
+    file.write("const double InterpolationFilter::m_AltNNFilters[15][NTAPS_NN][NTAPS_NN] =\n{\n") if combined else \
+        file.write("const double InterpolationFilter::m_AltNNFilters[4][15][NTAPS_NN][NTAPS_NN] =\n{\n")
+
+    spaces = 2
+    for current_qp in qp_range:
+        # write all coefficients into the .txt file, per fractional shift and per QP
+        if not single_qp:
+            w_file.write(" " * spaces + "{\n")
+            spaces += 2
+        for current_key in filter_dict[current_qp]:
+            current_filter = filter_dict[current_qp][current_key]
+
+            file.write(" " * spaces + "{\n")
+            spaces += 2
+            for r in range(current_filter.shape[0]):
+                file.write(" " * spaces + "{")
+                for c in range(current_filter.shape[1]):
+                    file.write(f" {current_filter[r][c]},") if c != current_filter.shape[1] - 1 else \
+                        file.write(f" {current_filter[r][c]}")
+                file.write(" },\n") if r != current_filter.shape[0] - 1 else file.write(" }\n")
+
+            spaces -= 2
+            file.write(" " * spaces + "},\n") if current_key != len(frac_positions()) - 1 else \
+                file.write(" " * spaces + "}\n")
+
+        if not single_qp:
+            spaces -= 2
+            file.write(" " * spaces + "},\n") if current_qp != qp_list[-1] else file.write(" " * spaces + "}\n")
+
+    file.write("};")
+    file.close()
 
 
 def write_to_xlsx(df_input, write, name):
+    """
+    Write an input to a .xlsx file
+    :param df_input: input for DataFrame
+    :param write: Excel writer
+    :param name: name of the sheet
+    """
     df = pd.DataFrame(df_input)
     df.to_excel(write, sheet_name=name)
 
@@ -54,119 +102,126 @@ if __name__ == '__main__':
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
 
-    tf.reset_default_graph()
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_fraction)
-    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
-        # import model config
-        model_cfg = import_path(f"../model-configs/{args.model_name}.py")
+    # import model config
+    model_cfg = import_path(f"../model-configs/{args.model}.py")
+    model_cfg.results_dir = "../" + model_cfg.results_dir
+    model_cfg.checkpoint_dir = "../" + model_cfg.checkpoint_dir
 
-        # initialise the specified cnn model
-        if model_cfg.model_name == "scratchcnn":
-            cnn_model = ScratchCNN(sess, model_cfg)
-        elif model_cfg.model_name == "scratchcnn_activation":
-            cnn_model = ScratchActCNN(sess, model_cfg)
-        elif model_cfg.model_name == "scratchcnn_bias":
-            cnn_model = ScratchBiasCNN(sess, model_cfg)
-        elif model_cfg.model_name == "scratchcnn_all":
-            cnn_model = ScratchAllCNN(sess, model_cfg)
-        elif model_cfg.model_name == "scratchcnn_onelayer":
-            cnn_model = ScratchOneCNN(sess, model_cfg)
-        elif model_cfg.model_name == "sharedcnn":
-            cnn_model = SharedCNN(sess, model_cfg)
-        elif model_cfg.model_name == "competitioncnn":
-            cnn_model = CompetitionCNN(sess, model_cfg)
-        else:
-            raise ValueError("Invalid model name specified!")
+    # loop through all fractional shifts and QPs the network has been trained for
+    combined = 1 if model_cfg.model_name == "sharedcnn" or model_cfg.model_name == "competitioncnn" else 0
+    frac_xy = ["all"] if combined else frac_positions()
+    qp_list = [27] if combined else [22, 27, 32, 37]
 
-        # load the trained model
-        tf.global_variables_initializer().run()
-        global_step = cnn_model.load(cnn_model.subdirectory())
+    # prepare dictionaries that will store the corresponding filters
+    learned_filters = nested_dict()
+    max_correlation = {k: [-1] * len(frac_positions()) for k in qp_list}
 
-        # compute filter coefficients from trained weights of the CNN model
-        # get shape of kernels from each layer
-        w1_shape = cnn_model.weights['w1'].get_shape()
-        w2_shape = cnn_model.weights['w2'].get_shape()
-        w3_shape = cnn_model.weights['w3'].get_shape()
+    for frac, qp in product(frac_xy, qp_list):
+        model_cfg.fractional_pixel = frac
+        model_cfg.qp = qp
 
-        # create matrix of minimum input size to the neural network, with labels for each position in the 13x13 grid
-        # extract patches from the matrix revealing where each input value was copied to before the 1st convolution
-        increment = np.reshape(np.arange(1, 13 ** 2 + 1), (13, 13))
-        increment_patches = tf.extract_image_patches(
-            images=np.reshape(increment, (1, 13, 13, 1)),
-            ksizes=[1, w1_shape[0], w1_shape[1], 1], strides=[1, 1, 1, 1], rates=[1, 1, 1, 1],
-            padding='VALID').eval()
-        # final input matrix that contains info for all positions
-        # that each coefficient from the master weight matrix will be applied to
-        increment_patches = np.reshape(increment_patches, (increment_patches.shape[1] * increment_patches.shape[2],
-                                                           increment_patches.shape[3]))
-
-        # reshape layer weights into 2D matrices
-        w1_rshp = np.reshape(cnn_model.sess.run(cnn_model.weights['w1']),
-                             (w1_shape[0] * w1_shape[1], w1_shape[3]))
-        w2_rshp = np.reshape(cnn_model.sess.run(cnn_model.weights['w2']), (w2_shape[2], w2_shape[3]))
-
-        for l3_filter in range(w3_shape[3]):
-            w3_rshp = np.reshape(cnn_model.sess.run(cnn_model.weights['w3'])[:, :, :, l3_filter],
-                                 (w3_shape[0] * w3_shape[1] * w3_shape[2], 1))
-
-            # transform the final layer vector into a 2D matrix
-            l3_trans = np.zeros((w3_shape[2], w3_shape[0] * w3_shape[1]))
-            for i, j in product(range(l3_trans.shape[0]), range(l3_trans.shape[1])):
-                l3_trans[i, j] = w3_rshp[j * l3_trans.shape[0] + i]
-
-            # get the master weight matrix that contains all matrix multiplication values
-            l_master = np.dot(np.dot(w1_rshp, w2_rshp), l3_trans)
-
-            # create a dictionary where keys are positions in the final 13x13 matrix
-            # and values are the final coefficients,
-            # obtained by summing the correct values from the master weight matrix
-            # (the info on which values contribute to each position is stored in the increment_patches matrix)
-            keys = np.arange(1, 13 ** 2 + 1)
-            values = np.zeros(13 ** 2)
-            finalmatrix_dict = dict(zip(keys, values))
-            for i, j in product(range(increment_patches.shape[0]), range(increment_patches.shape[1])):
-                finalmatrix_dict[increment_patches[i, j]] += l_master[j, i]
-
-            # create list of final coefficients
-            all_val = list(finalmatrix_dict.values())
-
-            # reshape the list into a 13x13 matrix and add 1 to the central coefficient
-            # because the network learns residuals
-            all_shapes = np.reshape(all_val, (13, 13))
-            all_shapes[int(all_shapes.shape[0] / 2), int(all_shapes.shape[1] / 2)] += 1
-
-            # scale coefficients so their sum equals 1
-            all_shapes *= 1/np.sum(all_shapes)
-
-            # create directories if needed
-            results_subdir = f"{model_cfg.model_name}-{model_cfg.dataset_dir.split('/')[1]}_{str(model_cfg.qp)}"
-            os.makedirs(os.path.join(model_cfg.results_dir, results_subdir), exist_ok=True)
-
-            writer = pd.ExcelWriter(os.path.join(model_cfg.results_dir, results_subdir, "filters.xlsx"),
-                                    engine='xlsxwriter')
-
-            if model_cfg == "sharedcnn" or "competitioncnn":
-                filter_list = [0, 5, 1, 3, 9, 4, 2, 8, 11, 7, 10, 12, 6, 13, 14]
+        tf.reset_default_graph()
+        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=args.gpu_fraction)
+        with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
+            # initialise the specified cnn model
+            if model_cfg.model_name == "scratchcnn":
+                cnn_model = ScratchCNN(sess, model_cfg)
+            elif model_cfg.model_name == "scratchcnn_onelayer":
+                cnn_model = ScratchOneCNN(sess, model_cfg)
+            elif model_cfg.model_name == "sharedcnn":
+                cnn_model = SharedCNN(sess, model_cfg)
+            elif model_cfg.model_name == "competitioncnn":
+                cnn_model = CompetitionCNN(sess, model_cfg)
             else:
-                filter_list = list(range(15))
+                raise ValueError("Invalid model name specified!")
 
-            w_file = open(os.path.join(model_cfg.results_dir, results_subdir, "nn_filter_for_vtm.txt"), "w+")
-            w_file.write("const double InterpolationFilter::m_AltNNFilters[15][NTAPS_NN][NTAPS_NN] =\n{\n")
+            # load the trained model
+            tf.global_variables_initializer().run()
+            _ = cnn_model.load(cnn_model.subdirectory())
 
-            write_to_xlsx(all_shapes, writer, f"NN Filter {l3_filter}")
+            # compute filter coefficients from trained weights of the CNN model
+            # first, get shape and values of kernels from each layer, and the entire kernel size
+            weight_shapes, weight_values = ([] for _ in range(2))
+            kernel = 0
+            for w in cnn_model.weights:
+                w_shape = cnn_model.weights[w].get_shape().as_list()
+                weight_shapes.append(w_shape)
+                weight_values.append(np.reshape(cnn_model.sess.run(cnn_model.weights[w]),
+                                                (w_shape[0] * w_shape[1] * w_shape[2], w_shape[3])))
+                kernel += w_shape[0] - 1 if w_shape[0] > 1 and len(cnn_model.weights) > 1 else w_shape[0]
 
-            w_file.write("  {")
-            for r in range(all_shapes.shape[0]):
-                w_file.write("    {") if r != 0 else w_file.write(" {")
-                for c in range(all_shapes.shape[1]):
-                    w_file.write(" " + str(all_shapes[r][c]) + ",") if c != all_shapes.shape[1] - 1 else \
-                        w_file.write(" " + str(all_shapes[r][c]))
-                w_file.write(" },\n") if r != all_shapes.shape[0] - 1 else w_file.write(" }\n")
+            # with a multi-layer CNN
+            if len(cnn_model.weights) > 1:
+                # transform the final layer vector into a 3D matrix
+                final_layer = np.reshape(weight_values[-1], (w_shape[0] * w_shape[1], w_shape[2], w_shape[3]))
+                final_layer = np.transpose(final_layer, (1, 0, 2))
+                weight_values[-1] = final_layer
 
-            w_file.write("  },\n") if l3_filter != filter_list[-1] else w_file.write("  }\n")
+                # get the master weight matrix that contains all matrix multiplication values
+                l_master = weight_values[0]
+                for i, values in enumerate(weight_values[1:]):
+                    if i == len(weight_values) - 2:
+                        l_master = np.einsum("ij,jkl->ikl", l_master, values)
+                    else:
+                        l_master = np.dot(l_master, values)
 
-    w_file.write("};")
-    w_file.close()
+                # create matrix of minimum input size to neural network, with labels for each position in the grid
+                # extract patches from the matrix revealing where input values were copied to before the 1st convolution
+                increment = np.reshape(range(kernel ** 2), (1, kernel, kernel, 1))
+                increment = tf.extract_image_patches(
+                    images=increment,
+                    ksizes=[1, weight_shapes[0][0], weight_shapes[0][1], 1], strides=[1, 1, 1, 1], rates=[1, 1, 1, 1],
+                    padding='VALID').eval()
+                # final input matrix that contains info for all positions from a kernel matrix
+                # that each coefficient from the master weight matrix will be applied to
+                increment = np.reshape(increment, (increment.shape[0] * increment.shape[1] * increment.shape[2],
+                                                   increment.shape[3]))
 
-    writer.save()
-    writer.close()
+                # create the final kernel matrix
+                # values are obtained by summing the correct values from the master weight matrix
+                # (the info on which values contribute to each position is stored in the increment matrix)
+                all_coefficients = np.zeros((kernel ** 2, weight_shapes[-1][-1]))
+                for i, j, k in product(range(increment.shape[0]), range(increment.shape[1]),
+                                       range(weight_shapes[-1][-1])):
+                    all_coefficients[increment[i, j], k] += l_master[j, i, k]
+
+            # with a single-layer CNN, directly use the coefficients
+            else:
+                all_coefficients = np.reshape(weight_values[0], weight_shapes[0])
+
+            # reshape the matrix and add 1 to the central coefficient because the network learns residuals
+            all_coefficients = np.reshape(all_coefficients, (kernel, kernel, weight_shapes[-1][-1]))
+            for k in range(weight_shapes[-1][-1]):
+                all_coefficients[all_coefficients.shape[0] // 2, all_coefficients.shape[1] // 2, k] += 1
+
+                # scale coefficients so their sum equals 1
+                all_coefficients[:, :, k] *= 1 / np.sum(all_coefficients[:, :, k])
+
+        # calculate correlation of coefficients to existing vvc filters and store the best filters into a dict
+        # per fractional shift and per QP
+        existing_filters = vvc_filters_2d(kernel)
+        for k in range(all_coefficients.shape[2]):
+            nn_filter = all_coefficients[:, :, k]
+            for i, vvc_filter in enumerate(existing_filters):
+                cc = zncc(vvc_filter, nn_filter)
+                if cc > max_correlation[qp][i]:
+                    max_correlation[qp][i] = cc
+                    learned_filters[qp][i] = nn_filter
+
+    # create directories if needed
+    results_subdir = os.path.join("models", model_cfg.model_name, model_cfg.dataset_dir.split('/')[1])
+    os.makedirs(os.path.join(model_cfg.results_dir, results_subdir), exist_ok=True)
+
+    # write all learned filters to .txt file
+    w_file = open(os.path.join(model_cfg.results_dir, results_subdir, "nn_filters_for_vtm.txt"), "w+")
+    write_to_txt(w_file, qp_list, learned_filters)
+
+    for qp in qp_list:
+        # open the .xlsx file where all final filter coefficients per QP will be displayed
+        writer = pd.ExcelWriter(os.path.join(model_cfg.results_dir, results_subdir, f"filters_{qp}.xlsx"),
+                                engine='xlsxwriter')
+        for key in learned_filters[qp]:
+            # write the filter coefficients into a separate worksheet within the .xlsx file
+            write_to_xlsx(learned_filters[qp][key], writer, f"NN Filter {key}")
+        writer.save()
+        writer.close()

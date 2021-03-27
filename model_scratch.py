@@ -60,7 +60,7 @@ class ScratchBaseCNN(BaseCNN, metaclass=ABCMeta):
         # get training and validation inputs/labels
         train_data, train_label, val_data, val_label = read_data(self.cfg.dataset_dir, self.cfg.batch_size,
                                                                  self.cfg.qp, self.cfg.fractional_pixel,
-                                                                 self.cfg.model_name)
+                                                                 self.half_kernel, self.cfg.model_name)
 
         # initialize logging
         writer, merged = self.initialize_graph(self.subdirectory())
@@ -102,18 +102,26 @@ class ScratchBaseCNN(BaseCNN, metaclass=ABCMeta):
                 break
 
     def test(self):
+        """
+        Testing procedure for the CNN model: read dataset, initialize variables, load model checkpoint,
+                                              test model on different block sizes,
+                                              calculate SAD loss and compare to VVC,
+                                              save results to specified directory
+        """
         test_data, test_label, test_sad = read_testdata(self.cfg.test_dataset_dir, self.cfg.fractional_pixel,
-                                                        self.cfg.model_name)
+                                                        self.half_kernel, self.cfg.model_name)
 
         tf.global_variables_initializer().run()
 
-        # load model if possible
-        _ = self.load(self.subdirectory())
+        # load model
+        global_step = self.load(self.subdirectory())
+        if not global_step:
+            raise SystemError("Failed to load a trained model!")
 
         print("Testing %s network (%s), QP=%d" % (self.cfg.model_name.upper(), self.cfg.fractional_pixel, self.cfg.qp))
 
         # Run test, per block size
-        error_pred, error_vvc, error_blocks = ([] for _ in range(3))
+        error_pred, error_vvc, error_switch = ([] for _ in range(3))
         for block in test_data:
             batch_test = math.ceil(len(test_data[block]) / self.cfg.batch_size)
             result = np.array([])
@@ -123,16 +131,19 @@ class ScratchBaseCNN(BaseCNN, metaclass=ABCMeta):
                 res = self.sess.run([self.pred], feed_dict=feed_dict)
                 result = np.vstack([result, res[0]]) if result.size else res[0]
 
-            # calculate SAD NN loss and compare it to VVC loss
+            # calculate NN loss and compare it to VVC loss
             nn_cost, vvc_cost, switch_cost = calculate_test_error(result, test_label[block], test_sad[block])
             error_pred.append(nn_cost)
             error_vvc.append(vvc_cost)
-            error_blocks.append(switch_cost)
+            error_switch.append(switch_cost)
 
         save_results(self.cfg.results_dir, self.cfg.model_name, self.subdirectory(),
-                     error_pred, error_vvc, error_blocks)
+                     error_pred, error_vvc, error_switch)
 
     def subdirectory(self):
+        """
+        Model subdirectory details
+        """
         return os.path.join(self.cfg.model_name, self.cfg.dataset_dir.split("/")[1],
                             f"{self.cfg.fractional_pixel}-{self.cfg.qp}")
 
@@ -154,9 +165,12 @@ class ScratchCNN(ScratchBaseCNN):
                                   initializer=tf.contrib.layers.variance_scaling_initializer())
         }
 
+        # parameter half_kernel needed for residual learning
+        self.calculate_half_kernel_size()
+
         self.pred = self.model()
 
-        self.loss = self.loss_functions("SAD")
+        self.loss = self.loss_functions(self.cfg.loss, self.labels, self.pred)
 
         self.train_op = tf.train.AdamOptimizer(self.cfg.learning_rate).minimize(self.loss)
 
@@ -164,7 +178,7 @@ class ScratchCNN(ScratchBaseCNN):
 
     def model(self):
         conv3 = self.linear_model()
-        return self.inputs[:, 6:-6, 6:-6, :] + conv3
+        return self.inputs[:, self.half_kernel:-self.half_kernel, self.half_kernel:-self.half_kernel, :] + conv3
 
 
 class ScratchActCNN(ScratchBaseCNN):
@@ -184,9 +198,12 @@ class ScratchActCNN(ScratchBaseCNN):
                                   initializer=tf.contrib.layers.variance_scaling_initializer())
         }
 
+        # parameter half_kernel needed for residual learning
+        self.calculate_half_kernel_size()
+
         self.pred = self.model()
 
-        self.loss = self.loss_functions("SAD")
+        self.loss = self.loss_functions(self.cfg.loss, self.labels, self.pred)
 
         self.train_op = tf.train.AdamOptimizer(self.cfg.learning_rate).minimize(self.loss)
 
@@ -199,7 +216,7 @@ class ScratchActCNN(ScratchBaseCNN):
         relu2 = self.relu_op('layer2', conv2, 'relu2')
         conv3 = self.conv_layer('layer3', relu2, self.weights['w3'], 'VALID', 'conv3')
 
-        return self.inputs[:, 6:-6, 6:-6, :] + conv3
+        return self.inputs[:, self.half_kernel:-self.half_kernel, self.half_kernel:-self.half_kernel, :] + conv3
 
 
 class ScratchBiasCNN(ScratchBaseCNN):
@@ -219,6 +236,9 @@ class ScratchBiasCNN(ScratchBaseCNN):
                                   initializer=tf.contrib.layers.variance_scaling_initializer())
         }
 
+        # parameter half_kernel needed for residual learning
+        self.calculate_half_kernel_size()
+
         self.biases = {
             'b1': tf.get_variable('b1', initializer=tf.zeros([64])),
             'b2': tf.get_variable('b2', initializer=tf.zeros([32])),
@@ -227,7 +247,7 @@ class ScratchBiasCNN(ScratchBaseCNN):
 
         self.pred = self.model()
 
-        self.loss = self.loss_functions("SAD")
+        self.loss = self.loss_functions(self.cfg.loss, self.labels, self.pred)
 
         self.train_op = tf.train.AdamOptimizer(self.cfg.learning_rate).minimize(self.loss)
 
@@ -241,7 +261,7 @@ class ScratchBiasCNN(ScratchBaseCNN):
         conv3 = self.conv_layer('layer3', bias2, self.weights['w3'], 'VALID', 'conv3')
         bias3 = self.bias_op('layer3', conv3, self.biases['b3'], 'bias3')
 
-        return self.inputs[:, 6:-6, 6:-6, :] + bias3
+        return self.inputs[:, self.half_kernel:-self.half_kernel, self.half_kernel:-self.half_kernel, :] + bias3
 
 
 class ScratchAllCNN(ScratchBaseCNN):
@@ -261,6 +281,9 @@ class ScratchAllCNN(ScratchBaseCNN):
                                   initializer=tf.contrib.layers.variance_scaling_initializer())
         }
 
+        # parameter half_kernel needed for residual learning
+        self.calculate_half_kernel_size()
+
         self.biases = {
             'b1': tf.get_variable('b1', initializer=tf.zeros([64])),
             'b2': tf.get_variable('b2', initializer=tf.zeros([32])),
@@ -269,7 +292,7 @@ class ScratchAllCNN(ScratchBaseCNN):
 
         self.pred = self.model()
 
-        self.loss = self.loss_functions("SAD")
+        self.loss = self.loss_functions(self.cfg.loss, self.labels, self.pred)
 
         self.train_op = tf.train.AdamOptimizer(self.cfg.learning_rate).minimize(self.loss)
 
@@ -285,7 +308,7 @@ class ScratchAllCNN(ScratchBaseCNN):
         conv3 = self.conv_layer('layer3', relu2, self.weights['w3'], 'VALID', 'conv3')
         bias3 = self.bias_op('layer3', conv3, self.biases['b3'], 'bias3')
 
-        return self.inputs[:, 6:-6, 6:-6, :] + bias3
+        return self.inputs[:, self.half_kernel:-self.half_kernel, self.half_kernel:-self.half_kernel, :] + bias3
 
 
 class ScratchOneCNN(ScratchBaseCNN):
@@ -301,9 +324,12 @@ class ScratchOneCNN(ScratchBaseCNN):
                                   initializer=tf.contrib.layers.variance_scaling_initializer())
         }
 
+        # parameter half_kernel needed for residual learning
+        self.calculate_half_kernel_size()
+
         self.pred = self.model()
 
-        self.loss = self.loss_functions("SAD")
+        self.loss = self.loss_functions(self.cfg.loss, self.labels, self.pred)
 
         self.train_op = tf.train.AdamOptimizer(self.cfg.learning_rate).minimize(self.loss)
 
@@ -312,7 +338,7 @@ class ScratchOneCNN(ScratchBaseCNN):
     def model(self):
         conv1 = self.conv_layer('layer1', self.inputs, self.weights['w1'], 'VALID', 'conv1')
 
-        return self.inputs[:, 6:-6, 6:-6, :] + conv1
+        return self.inputs[:, self.half_kernel:-self.half_kernel, self.half_kernel:-self.half_kernel, :] + conv1
 
 
 class SRCNN(ScratchBaseCNN):
@@ -332,6 +358,9 @@ class SRCNN(ScratchBaseCNN):
                                   initializer=tf.contrib.layers.variance_scaling_initializer())
         }
 
+        # parameter half_kernel needed for residual learning
+        self.calculate_half_kernel_size()
+
         self.biases = {
             'b1': tf.get_variable('b1', initializer=tf.zeros([64])),
             'b2': tf.get_variable('b2', initializer=tf.zeros([32])),
@@ -340,7 +369,7 @@ class SRCNN(ScratchBaseCNN):
 
         self.pred = self.model()
 
-        self.loss = self.loss_functions("MSE")
+        self.loss = self.loss_functions(self.cfg.loss, self.labels, self.pred)
 
         self.train_op = tf.train.AdamOptimizer(self.cfg.learning_rate).minimize(self.loss)
 

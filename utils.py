@@ -30,7 +30,6 @@
 
 import numpy as np
 import os
-import random
 import sys
 import math
 from itertools import product
@@ -106,7 +105,7 @@ class VideoYUV:
 
 def import_path(path):
     """
-    Function for reading config files
+    Read config files
     :param path: path to the config file
     :return: module that contains all the parameters as specified in the config file
     """
@@ -123,7 +122,7 @@ def import_path(path):
 
 def nested_dict():
     """
-    Function for creating generic nested dictionaries
+    Create generic nested dictionary
     :return: empty nested dictionary
     """
     return defaultdict(nested_dict)
@@ -131,18 +130,16 @@ def nested_dict():
 
 def clip_round(value):
     """
-    Function used for rounding and clipping interpolated values to 10-bit range
+    Round and clip interpolated values to 10-bit range
     :param value: float input
     :return: rounded and clipped value
     """
-    value = np.round(value/64)
-    value = max(0, min(value, 1023))
-    return value
+    return max(0, min(np.round(value/64), 1023))
 
 
 def interp_filtering(input_block, kernel_size, x_frac, y_frac):
     """
-    Function that interpolates rectangular blocks using DCT filter coefficients based on the selected fractional inputs
+    Interpolate rectangular blocks using DCT filter coefficients based on the selected fractional inputs
     :param input_block: rectangular block to be interpolated
     :param kernel_size: combined size of convolutional kernels, affects the label shape
     :param x_frac: fractional position on the x-axis
@@ -179,9 +176,53 @@ def interp_filtering(input_block, kernel_size, x_frac, y_frac):
     return label.astype(np.int16)
 
 
+def vvc_filters_2d(kernel_size):
+    """
+    Compute 2D version of VVC filters and store them in a kernel-sized grid
+    :param kernel_size: size of kernel for 2D VVC filter representation (min value is 8)
+    :return a list of 15 2D VVC filters
+    """
+    vvc_filters = []
+    half_kernel = (kernel_size - 8) // 2
+    for frac_pos in frac_positions():
+        filter_x = filter_coefficients(int(frac_pos.split(",")[0]))
+        filter_y = filter_coefficients(int(frac_pos.split(",")[1]))
+
+        filter_vvc = np.tile(filter_x, 8).reshape((8, 8))
+        for index in range(len(filter_y)):
+            filter_vvc[index, :] *= filter_y[index]
+        filter_vvc = filter_vvc / (64 * 64)
+
+        vvc_filters.append(np.pad(filter_vvc, ((half_kernel + 1, half_kernel), (half_kernel + 1, half_kernel)),
+                                  'constant', constant_values=0))
+    return vvc_filters
+
+
+def zncc(template, image):
+    """
+    Zero-normalized cross-correlation, a 2D version of Pearson product-moment correlation coefficient
+    :param
+    :param
+    :return cross-correlation coefficient
+    """
+    std_template = np.std(template)
+    if std_template == 0:
+        return 0
+
+    std_image = np.std(image)
+    if std_image == 0:
+        return 0
+
+    template_t = template - np.mean(template)
+    image_t = image - np.mean(image)
+
+    cross_correlation = np.mean(np.multiply(template_t, image_t)) / (std_template * std_image)
+    return cross_correlation
+
+
 def frac_positions():
     """
-    Function that returns all quarter-pixel fractional positions in a 2D block (horizontal/vertical)
+    Return all quarter-pixel fractional positions in a 2D block (horizontal/vertical)
     :return: string list of "x-axis,y-axis" fractions, in increments of 4
     """
     return [f"{x},{y}" for x in range(0, 15, 4) for y in range(0, 15, 4) if x != 0 or y != 0]
@@ -189,8 +230,8 @@ def frac_positions():
 
 def block_sizes(max_size):
     """
-    Function that returns all possible block sizes of an inter-predicted frame (min size is 4x8 or 8x4)
-    :param max_size: maximum exponent of the power of 2 specifying width/height (f.e. 6 = 32x32), max value is 8
+    Return all possible block sizes of an inter-predicted frame (min size is 4x8 or 8x4)
+    :param max_size: maximum exponent of the power of 2 specifying width/height (e.g. 6 = 32x32), max value is 8
     :return: string list of "width x height" sizes
     """
     if max_size > 8:
@@ -206,6 +247,7 @@ def filter_coefficients(position):
     :return: 8 filter coefficients for the specified fractional shift
     """
     return {
+        0: [0, 0, 0, 64, 0, 0, 0, 0],
         1: [0, 1, -3, 63, 4, -2, 1, 0],
         2: [-1, 2, -5, 62, 8, -3, 1, 0],
         3: [-1, 3, -8, 60, 13, -4, 1, 0],
@@ -224,41 +266,42 @@ def filter_coefficients(position):
     }.get(position, 'Invalid fractional pixel position!')
 
 
-def concatenate_dictionary_keys(dictionary):
+def concatenate_dictionary_keys(*dictionaries):
     """
-    Function that concatenates all values under dictionary keys into one value
-    :param dictionary: dictionary to be concatenated
-    :return: concatenated dictionary
+    Concatenate all values under dictionary keys into one value
+    :param dictionaries: one or more dictionaries to be concatenated
+    :return: one or more concatenated dictionaries
     """
-    dictionary = np.concatenate(list(dictionary[i] for i in dictionary))
-    return dictionary
+    concat_dict = []
+    for entry in dictionaries:
+        concat_dict.append(np.concatenate(list(entry[i] for i in entry)))
+    return concat_dict
 
 
-def get_test_dict(path):
+def get_dataset_dict(path, identifier):
     """
-    Function that loads testing dictionaries from input path
-    :param path: path to test H5py dataset
+    Load dataset dictionaries from input path
+    :param path: path to H5py dataset
+    :param identifier: dataset filename identifier, either QP value or 'test'
     :return: dictionaries of inputs, labels and SAD losses
     """
-    filename = [file for file in os.listdir(path) if file.endswith('test.hdf5')][0]
+    filename = [file for file in os.listdir(path) if file.endswith(f"{identifier}.hdf5")][0]
     f = h5todict(os.path.join(path, filename))
 
-    inputs_dict = f.get('inputs')
-    labels_dict = f.get('labels')
-    sad_dict = f.get('sad_loss')
-    return inputs_dict, labels_dict, sad_dict
+    return f.get('inputs'), f.get('labels'), f.get('sad_loss')
 
 
-def read_testdata(path, frac, model):
+def read_testdata(path, frac, kernel, model):
     """
     Load H5py test dataset for Scratch model
     :param path: file path of dataset
     :param frac: fractional position pair for which the dataset has been generated
+    :param kernel: half size of the kernel, needed for slicing the input
     :param model: name of the model to be tested
     :return: arrays of inputs, labels and SAD losses
     """
     # load dataset and dictionaries of inputs, labels, SAD (Sum of Absolute Differences) loss
-    inputs_dict, labels_dict, sad_dict = get_test_dict(path)
+    inputs_dict, labels_dict, sad_dict = get_dataset_dict(path, "test")
 
     # create testing dictionaries
     block_keys = [k for k in inputs_dict]
@@ -271,15 +314,15 @@ def read_testdata(path, frac, model):
         if len(inputs) == 0:
             continue
 
-        # if SRCNN, use same input & label size
-        inputs = inputs[:, 6:-6, 6:-6, :] if model == "srcnn" else inputs
+        # if model contains non-linear activations, use same input & label size
+        inputs = inputs[:, kernel:-kernel, kernel:-kernel, :] if "scratch" not in model else inputs
 
         labels = labels_dict[block][frac]
         sad_loss = sad_dict[block][frac]
 
-        test_inputs_dict[block] = np.array(inputs).astype(float)
-        test_labels_dict[block] = np.array(labels).astype(float)
-        sad_loss_dict[block] = np.array(sad_loss).astype(float)
+        test_inputs_dict[block] = inputs.astype(float)
+        test_labels_dict[block] = labels.astype(float)
+        sad_loss_dict[block] = sad_loss.astype(float)
 
     return test_inputs_dict, test_labels_dict, sad_loss_dict
 
@@ -291,7 +334,7 @@ def read_shared_testdata(path):
     :return: arrays of inputs, labels and SAD losses
     """
     # load dataset and dictionaries of inputs, labels, SAD (Sum of Absolute Differences) loss
-    inputs_dict, labels_dict, sad_dict = get_test_dict(path)
+    inputs_dict, labels_dict, sad_dict = get_dataset_dict(path, "test")
 
     # create testing dictionaries
     block_keys = [k for k in inputs_dict]
@@ -304,13 +347,9 @@ def read_shared_testdata(path):
             continue
 
         for frac in inputs_dict[block]:
-            inputs = inputs_dict[block][frac]
-            labels = labels_dict[block][frac]
-            sad_loss = sad_dict[block][frac]
-
-            test_inputs_dict[block][frac] = np.array(inputs).astype(float)
-            test_labels_dict[block][frac] = np.array(labels).astype(float)
-            sad_loss_dict[block][frac] = np.array(sad_loss).astype(float)
+            test_inputs_dict[block][frac] = inputs_dict[block][frac].astype(float)
+            test_labels_dict[block][frac] = labels_dict[block][frac].astype(float)
+            sad_loss_dict[block][frac] = sad_dict[block][frac].astype(float)
 
     return test_inputs_dict, test_labels_dict, sad_loss_dict
 
@@ -322,61 +361,52 @@ def read_combined_testdata(path):
     :return: arrays of inputs, labels and SAD losses
     """
     # combine all subsets into one and shuffle
-    test_inputs_sub, test_labels_sub, sad_loss_sub = read_shared_testdata(path)
+    test_inputs_sub, test_labels_sub, test_sad_sub = read_shared_testdata(path)
 
     test_inputs_all, test_labels_all, test_sad_all = (dict() for _ in range(3))
     for block in test_inputs_sub:
-        test_inputs_all[block] = concatenate_dictionary_keys(test_inputs_all[block])
-        test_labels_all[block] = concatenate_dictionary_keys(test_labels_all[block])
-        test_sad_all[block] = concatenate_dictionary_keys(test_sad_all[block])
+        test_inputs_all[block], test_labels_all[block], test_sad_all[block] = \
+            concatenate_dictionary_keys(test_inputs_sub[block], test_labels_sub[block], test_sad_sub[block])
 
     return test_inputs_all, test_labels_all, test_sad_all
 
 
-def split_data(data, train_percentage):
+def split_data(train_percentage, *data):
     """
-    Function that splits data into training and validation sets according to the specified percentage
-    :param data: data to be split
+    Split data into training and validation sets according to the specified percentage
     :param train_percentage: percentage of training data in the entire data
+    :param data: data to be split
     :return: training & validation data
     """
-    return data[0:int(train_percentage * len(data))],  data[int(train_percentage * len(data)):]
+    train = [entry[0:int(train_percentage * len(entry))] for entry in data]
+    val = [entry[int(train_percentage * len(entry)):] for entry in data]
+    return train, val
 
 
-def array_triple_shuffle(first, second, third):
+def array_shuffle(length, *arrays):
     """
-    Shuffle a triple of arrays
-    :param first: first array out of three
-    :param second: second array out of three
-    :param third: third array out of three
-    :return: shuffled triple of arrays
+    Shuffle arrays by permuting their indices
+    :param length: length of output arrays
+    :param arrays: variable number of arrays
+    :return: shuffled arrays
     """
-    c = list(zip(first, second, third))
-    random.Random(42).shuffle(c)
-    first, second, third = zip(*c)
-
-    first = np.array(first).astype(float)
-    second = np.array(second).astype(float)
-    third = np.array(third).astype(float)
-    return first, second, third
+    p = np.random.RandomState(42).permutation(length)
+    return [entry[p] for entry in arrays]
 
 
-def read_data(path, batch_size, qp, frac, model):
+def read_data(path, batch_size, qp, frac, kernel, model):
     """
     Load H5py dataset for Scratch models
     :param path: file path of dataset
     :param batch_size: size of batch
     :param qp: Quantization Parameter (QP) of the dataset
     :param frac: fractional position pair for which the dataset has been generated
-    :param model: name of the model to be trained
+    :param kernel: half size of the kernel, needed for slicing the input
+    :param model: name of the model to be tested
     :return: arrays of inputs and labels, separated into training and validation sets
     """
     # load h5 file and get dictionaries
-    filename = [file for file in os.listdir(path) if file.endswith('_%d.hdf5' % qp)][0]
-    f = h5todict(os.path.join(path, filename))
-
-    inputs_dict = f.get('inputs')
-    labels_dict = f.get('labels')
+    inputs_dict, labels_dict, _ = get_dataset_dict(path, qp)
 
     # create training / validation dictionaries
     block_keys = [k for k in inputs_dict]
@@ -387,32 +417,26 @@ def read_data(path, batch_size, qp, frac, model):
         inputs = inputs_dict[block][frac]
 
         # only use inputs that can be split 80 / 20 train / validation and fill out a batch
-        if len(inputs) < 1.25*batch_size:
+        split_percentage = 4/5
+        if len(inputs) < batch_size / split_percentage:
             continue
 
-        # if SRCNN, use same input & label size
-        inputs = inputs[:, 6:-6, 6:-6, :] if model == "srcnn" else inputs
+        # if model contains non-linear activations, use same input & label size
+        inputs = inputs[:, kernel:-kernel, kernel:-kernel, :] if "scratch" not in model else inputs
 
         labels = labels_dict[block][frac]
 
         # shuffle the pairs
-        c = list(zip(inputs, labels))
-        random.Random(42).shuffle(c)
-        inputs, labels = zip(*c)
-
-        inputs = np.array(inputs).astype(float)
-        labels = np.array(labels).astype(float)
+        inputs, labels = array_shuffle(len(inputs), inputs, labels)
 
         # split 80 / 20
-        train_inputs, val_inputs = split_data(inputs, 0.8)
-        train_labels, val_labels = split_data(labels, 0.8)
+        (train_inputs, train_labels), (val_inputs, val_labels) = split_data(split_percentage, inputs, labels)
 
-        # ensure the training size is a multiple of batch size
-        train_mod = len(train_inputs) % batch_size
-        train_inputs_dict[block] = train_inputs[:-train_mod] if train_mod else train_inputs
-        train_labels_dict[block] = train_labels[:-train_mod] if train_mod else train_labels
-        val_inputs_dict[block] = np.vstack((val_inputs, train_inputs[-train_mod:])) if train_mod else val_inputs
-        val_labels_dict[block] = np.vstack((val_labels, train_labels[-train_mod:])) if train_mod else val_labels
+        # put into correct dictionary entry
+        train_inputs_dict[block] = train_inputs
+        train_labels_dict[block] = train_labels
+        val_inputs_dict[block] = val_inputs
+        val_labels_dict[block] = val_labels
 
     return train_inputs_dict, train_labels_dict, val_inputs_dict, val_labels_dict
 
@@ -425,12 +449,7 @@ def read_shared_data(path, batch_size):
     :return: arrays of inputs, labels and SAD losses, separated into training and validation sets
     """
     # load h5 file and get dictionaries
-    filename = [file for file in os.listdir(path) if file.endswith('_27.hdf5')][0]
-    f = h5todict(os.path.join(path, filename))
-
-    inputs_dict = f.get('inputs')
-    labels_dict = f.get('labels')
-    sad_dict = f.get('sad_loss')
+    inputs_dict, labels_dict, sad_dict = get_dataset_dict(path, "27")
 
     # create training / validation dictionaries
     block_keys = [k for k in inputs_dict]
@@ -445,7 +464,8 @@ def read_shared_data(path, batch_size):
         balanced_size = min(list(len(inputs[frac]) for frac in inputs))
 
         # only use inputs that can be split 80 / 20 train / validation and fill out a batch
-        if balanced_size < 1.25*batch_size:
+        split_percentage = 4/5
+        if balanced_size < batch_size / split_percentage:
             continue
 
         labels = labels_dict[block]
@@ -455,30 +475,21 @@ def read_shared_data(path, batch_size):
 
         # shuffle datasets per fractional position and reduce each subset to the same size, then split
         for frac in inputs:
-            c = list(zip(inputs[frac], labels[frac], sad_loss[frac]))
-            random.Random(42).shuffle(c)
-            inputs[frac], labels[frac], sad_loss[frac] = zip(*c)
-
-            inputs[frac] = np.array(inputs[frac][:balanced_size]).astype(float)
-            labels[frac] = np.array(labels[frac][:balanced_size]).astype(float)
-            sad_loss[frac] = np.array(sad_loss[frac][:balanced_size]).astype(float)
+            inputs[frac], labels[frac], sad_loss[frac] = array_shuffle(balanced_size,
+                                                                       inputs[frac], labels[frac], sad_loss[frac])
 
             # split 80 / 20
-            train_inputs[frac], val_inputs[frac] = split_data(inputs[frac], 0.8)
-            train_labels[frac], val_labels[frac] = split_data(labels[frac], 0.8)
-            train_sad[frac], val_sad[frac] = split_data(sad_loss[frac], 0.8)
+            (train_inputs[frac], train_labels[frac], train_sad[frac]), \
+                (val_inputs[frac], val_labels[frac], val_sad[frac]) = \
+                split_data(split_percentage, inputs[frac], labels[frac], sad_loss[frac])
 
-            # ensure the training size is a multiple of batch size
-            train_mod = len(train_inputs[frac]) % batch_size
-            train_inputs_dict[block][frac] = train_inputs[frac][:-train_mod] if train_mod else train_inputs[frac]
-            train_labels_dict[block][frac] = train_labels[frac][:-train_mod] if train_mod else train_labels[frac]
-            train_sad_dict[block][frac] = train_sad[frac][:-train_mod] if train_mod else train_sad[frac]
-            val_inputs_dict[block][frac] = np.vstack((val_inputs[frac], train_inputs[frac][-train_mod:])) \
-                if train_mod else val_inputs[frac]
-            val_labels_dict[block][frac] = np.vstack((val_labels[frac], train_labels[frac][-train_mod:])) \
-                if train_mod else val_labels[frac]
-            val_sad_dict[block][frac] = np.hstack((val_sad[frac], train_sad[frac][-train_mod:])) \
-                if train_mod else val_sad[frac]
+            # put into correct dictionary entry
+            train_inputs_dict[block][frac] = train_inputs[frac]
+            train_labels_dict[block][frac] = train_labels[frac]
+            train_sad_dict[block][frac] = train_sad[frac]
+            val_inputs_dict[block][frac] = val_inputs[frac]
+            val_labels_dict[block][frac] = val_labels[frac]
+            val_sad_dict[block][frac] = val_sad[frac]
 
     return train_inputs_dict, train_labels_dict, train_sad_dict, val_inputs_dict, val_labels_dict, val_sad_dict
 
@@ -498,59 +509,45 @@ def read_combined_data(train_inputs, train_labels, train_sad, val_inputs, val_la
     train_inputs_all, train_labels_all, val_inputs_all, val_labels_all, train_sad_all, val_sad_all = \
         (dict() for _ in range(6))
     for block in train_inputs:
-        train_inputs_all[block] = concatenate_dictionary_keys(train_inputs[block])
-        train_labels_all[block] = concatenate_dictionary_keys(train_labels[block])
-        train_sad_all[block] = concatenate_dictionary_keys(train_sad[block])
-        val_inputs_all[block] = concatenate_dictionary_keys(val_inputs[block])
-        val_labels_all[block] = concatenate_dictionary_keys(val_labels[block])
-        val_sad_all[block] = concatenate_dictionary_keys(val_sad[block])
+        train_inputs_all[block], train_labels_all[block], train_sad_all[block] = \
+            concatenate_dictionary_keys(train_inputs[block], train_labels[block], train_sad[block])
+        val_inputs_all[block], val_labels_all[block], val_sad_all[block] = \
+            concatenate_dictionary_keys(val_inputs[block], val_labels[block], val_sad[block])
 
         # shuffle the triples
         train_inputs_all[block], train_labels_all[block], train_sad_all[block] = \
-            array_triple_shuffle(train_inputs_all[block], train_labels_all[block], train_sad_all[block])
+            array_shuffle(len(train_sad_all[block]),
+                          train_inputs_all[block], train_labels_all[block], train_sad_all[block])
         val_inputs_all[block], val_labels_all[block], val_sad_all[block] = \
-            array_triple_shuffle(val_inputs_all[block], val_labels_all[block], val_sad_all[block])
+            array_shuffle(len(val_sad_all[block]), val_inputs_all[block], val_labels_all[block], val_sad_all[block])
 
     return train_inputs_all, train_labels_all, train_sad_all, val_inputs_all, val_labels_all, val_sad_all
 
 
-def calculate_batch_number(train_data, val_data, batch_size):
+def calculate_batch_number(train_data, val_data, batch_size, nested=False):
     """
-    Function that calculates number of training / validation batches according to the specified batch size
+    Calculate number of training / validation batches according to the specified batch size
     :param train_data: training dictionary
     :param val_data: validation dictionary
     :param batch_size: batch size of model to be trained
+    :param nested: indicates whether it's a nested dictionary; if yes, it needs to be of balanced size
     :return: number of training and validation batches per key in dictionary
     """
     batch_train, batch_val = ([] for _ in range(2))
     for key in train_data:
-        batch_train.append(int(len(train_data[key]) / batch_size))
-        batch_val.append(math.ceil(len(val_data[key]) / batch_size))
-
-    return batch_train, batch_val
-
-
-def calculate_batch_number_nested(train_data, val_data, batch_size):
-    """
-    Function that calculates number of training / validation batches of a nested dictionary
-    according to the specified batch size
-    :param train_data: nested training dictionary
-    :param val_data: nested validation dictionary
-    :param batch_size: batch size of model to be trained
-    :return: number of training and validation batches per key in top dictionary
-    """
-    batch_train, batch_val = ([] for _ in range(2))
-    for key in train_data:
-        batch_train.append(int(len(train_data[key][next(iter(train_data[key]))]) / batch_size))
-        batch_val.append(math.ceil(len(val_data[key][next(iter(val_data[key]))]) / batch_size))
+        if nested:
+            batch_train.append(int(len(train_data[key][next(iter(train_data[key]))]) / batch_size))
+            batch_val.append(math.ceil(len(val_data[key][next(iter(val_data[key]))]) / batch_size))
+        else:
+            batch_train.append(int(len(train_data[key]) / batch_size))
+            batch_val.append(math.ceil(len(val_data[key]) / batch_size))
 
     return batch_train, batch_val
 
 
 def calculate_test_error(result, test_label, test_sad):
     """
-    Method that calculates prediction error of the Neural Network (NN), VVC and their combination batch
-    to the original label
+    Calculate prediction error of the Neural Network, VVC and their combination batch compared to the original label
     :param result: NN prediction
     :param test_label: ground truth
     :param test_sad: SAD loss of VVC and the ground truth
@@ -558,18 +555,17 @@ def calculate_test_error(result, test_label, test_sad):
     """
     result = np.round(result).astype(int)
     nn_cost = np.mean(np.abs(test_label - result), axis=(1, 2, 3))
-    vvc_cost = test_sad
 
     # calculate switchable filter loss
-    switch_cost = np.stack([nn_cost, vvc_cost])
+    switch_cost = np.stack([nn_cost, test_sad])
     switch_cost = np.min(switch_cost, axis=0)
 
-    return np.mean(nn_cost), np.mean(vvc_cost), np.mean(switch_cost)
+    return np.mean(nn_cost), np.mean(test_sad), np.mean(switch_cost)
 
 
 def save_results(results_dir, model_name, model_subdir, error_pred, error_vvc, error_switch):
     """
-    Function that saves results of model testing into a .txt file in the results directory
+    Save results of model testing into a .txt file in the results directory
     :param results_dir: results directory
     :param model_name: name of trained model
     :param model_subdir: model subdirectory organisation
@@ -577,8 +573,8 @@ def save_results(results_dir, model_name, model_subdir, error_pred, error_vvc, e
     :param error_vvc: VVC SAD loss
     :param error_switch: Switchable (combined / minimum) SAD loss
     """
-    os.makedirs(os.path.join(results_dir, model_subdir), exist_ok=True)
-    with open(os.path.join(results_dir, model_subdir, f"test_sad_loss.txt"), 'a') as out_file:
-        out_file.write(f"NN SAD loss : {np.mean(error_pred):.4f}")
-        out_file.write(f"VVC SAD loss : {np.mean(error_vvc):.4f}")
-        out_file.write(f"Switchable {model_name.upper()} SAD loss: {np.mean(error_switch):.4f}")
+    os.makedirs(os.path.join(results_dir, "models", model_subdir), exist_ok=True)
+    with open(os.path.join(results_dir, "models", model_subdir, f"test_sad_loss.txt"), 'a') as out_file:
+        out_file.write(f"NN SAD loss : {np.mean(error_pred):.4f}\n")
+        out_file.write(f"VVC SAD loss : {np.mean(error_vvc):.4f}\n")
+        out_file.write(f"Switchable {model_name.upper()} SAD loss: {np.mean(error_switch):.4f}\n")

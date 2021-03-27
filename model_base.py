@@ -56,6 +56,8 @@ class BaseCNN(object):
         self.saver = None
         self.train_op = None
 
+        self.half_kernel = 0
+
         self.minimum = sys.maxsize
         self.counter = 0
 
@@ -69,17 +71,15 @@ class BaseCNN(object):
         # make summary
         tf.summary.scalar('loss', self.loss)
         tf.summary.scalar('learning rate', self.cfg.learning_rate)
-        tf.summary.histogram('w1', self.weights['w1'])
-        tf.summary.histogram('w2', self.weights['w2'])
-        tf.summary.histogram('w3', self.weights['w3'])
+        for w in self.weights:
+            tf.summary.histogram(w, self.weights[w])
         tf.summary.image('inputs', self.inputs, max_outputs=2)
         tf.summary.image('labels', self.labels, max_outputs=2)
         tf.summary.image('prediction', self.pred[:, :, :, 0:1], max_outputs=2)
 
         # save summaries in the graphs directory
         sub_dir = os.path.join(self.cfg.graphs_dir, graphs_subdir)
-        if not os.path.exists(sub_dir):
-            os.makedirs(sub_dir)
+        os.makedirs(sub_dir, exist_ok=True)
 
         writer = tf.summary.FileWriter(sub_dir, self.sess.graph)
         merged = tf.summary.merge_all()
@@ -87,6 +87,13 @@ class BaseCNN(object):
         return writer, merged
 
     def prepare_feed_dict(self, inputs, labels, i):
+        """
+        Method that prepares a batch of inputs / labels to be fed into the model
+        :param inputs: input data
+        :param labels: label data
+        :param i: index pointing to the current position within the data
+        :return a batch-sized dictionary of inputs / labels
+        """
         batch_inputs = inputs[i * self.cfg.batch_size: (i + 1) * self.cfg.batch_size]
         batch_labels = labels[i * self.cfg.batch_size: (i + 1) * self.cfg.batch_size]
         feed_dict = {self.inputs: batch_inputs, self.labels: batch_labels}
@@ -95,7 +102,7 @@ class BaseCNN(object):
 
     def save_epoch(self, current_epoch, current_step, start_time, train_error, val_error, model_subdir):
         """
-        Function that runs all necessary steps to finish a epoch:
+        Run all necessary steps to finish a epoch:
         print status, save model if loss has decreased, return counter towards early stopping
         :param current_epoch: current epoch of trained model
         :param current_step: current step of trained model
@@ -105,8 +112,8 @@ class BaseCNN(object):
         :param model_subdir: model subdirectory organisation
         :return: early stopping counter
         """
-        print("Epoch: [%2d], time: [%4.4f], training loss: [%.8f], validation loss: [%.8f]"
-              % ((current_epoch + 1), time.time() - start_time, train_error, val_error))
+        print(f"Epoch: [{current_epoch + 1}], time: [{time.time() - start_time:.4f}], "
+              f"training loss: [{train_error:.8f}], validation loss: [{val_error:.8f}]")
 
         # save model if validation loss has decreased, else increase counter towards early stopping
         if self.minimum > val_error:
@@ -124,7 +131,7 @@ class BaseCNN(object):
         :param step: current step of training
         :param checkpoint_subdir: subdirectory of checkpoint to be saved
         """
-        model_name = self.cfg.model_name.upper() + ".model"
+        model_name = f"{self.cfg.model_name.upper()}.model"
         checkpoint_loc = os.path.join(self.cfg.checkpoint_dir, checkpoint_subdir)
 
         os.makedirs(checkpoint_loc, exist_ok=True)
@@ -151,8 +158,25 @@ class BaseCNN(object):
             print(" [!] Load failed")
             return 0
 
+    def calculate_half_kernel_size(self):
+        """
+        Calculate half kernel size for convolutional neural networks
+        Set half kernel parameter, as it's needed for slicing the input in residual learning networks
+        """
+        for w in self.weights:
+            self.half_kernel += self.weights[w].get_shape()[0].value//2
+
     @staticmethod
     def conv_layer(layer_name, layer_input, layer_weights, conv_padding, conv_name):
+        """
+        Create a convolutional operation for a named layer in a NN model
+        :param layer_name: name of current neural network layer
+        :param layer_input: input to the convolutional operation
+        :param layer_weights: trainable convolutional kernels of the convolutional operation
+        :param conv_padding: padding of the convolutional operation (SAME or VALID)
+        :param conv_name: name of the convolutional operation
+        :return output of the convolution
+        """
         with tf.variable_scope(layer_name):
             conv = tf.nn.conv2d(layer_input, layer_weights, strides=[1, 1, 1, 1], padding=conv_padding, name=conv_name)
             tf.summary.image(conv_name, tf.expand_dims(conv[:, :, :, 0], 3), max_outputs=2)
@@ -160,19 +184,34 @@ class BaseCNN(object):
 
     @staticmethod
     def bias_op(layer_name, layer_input, layer_weights, bias_name):
+        """
+        Add a bias variable to the specified input
+        :param layer_name: name of current neural network layer
+        :param layer_input: input to the addition operation
+        :param layer_weights: trainable bias coefficients
+        :param bias_name: name of the addition operation
+        :return output of the bias addition operation
+        """
         with tf.variable_scope(layer_name):
             bias = tf.add(layer_input, layer_weights, name=bias_name)
         return bias
 
     @staticmethod
     def relu_op(layer_name, layer_input, relu_name):
+        """
+        Apply a Rectified Linear Unit (ReLU) operation on the specified input
+        :param layer_name: name of current neural network layer
+        :param layer_input: input to the ReLU operation
+        :param relu_name: name of the ReLU operation
+        :return output of the ReLU operation
+        """
         with tf.variable_scope(layer_name):
             relu = tf.nn.relu(layer_input, name=relu_name)
         return relu
 
     def linear_model(self):
         """
-        Function that builds a 3-layer linear model
+        Build a 3-layer linear model
         :return: output of the final convolutional layer
         """
         conv1 = self.conv_layer('layer1', self.inputs, self.weights['w1'], 'VALID', 'conv1')
@@ -181,22 +220,33 @@ class BaseCNN(object):
 
         return conv3
 
-    def loss_functions(self, loss_choice, outputs=None):
+    @staticmethod
+    def loss_functions(loss_choice, labels, prediction, axis=(0, 1, 2, 3)):
         """
         Method that contains different options for computing losses
-        :param loss_choice: Sum of Absolute Differences (SAD), Mean Squared Error (MSE) or complex
-        :param outputs:  number of outputs of the last convolution layer, only used with "complex" loss choice
+        :param loss_choice: Sum of Absolute Differences (SAD) or Mean Squared Error (MSE)
+        :param labels: batch of ground truth labels
+        :param prediction: batch of NN prediction outputs
+        :param axis: axis along which the mean operation will be performed
         :return: batch loss
         """
         if loss_choice == "SAD":
-            return tf.reduce_mean(tf.math.abs(self.labels - self.pred), name="loss")
+            return tf.reduce_mean(tf.math.abs(labels - prediction), axis=axis, name="loss")
         elif loss_choice == "MSE":
-            return tf.reduce_mean(tf.square(self.labels - self.pred), name="loss")
-        elif loss_choice == "complex":
-            tile_axis = tf.constant([1, 1, 1, outputs])
-            current_inputs = tf.tile(self.inputs, tile_axis)
-            current_labels = tf.tile(self.labels, tile_axis)
+            return tf.reduce_mean(tf.square(labels - prediction), axis=axis, name="loss")
+        else:
+            print("Invalid loss function selected!")
 
-            current_pred = (current_inputs[:, 6:-6, 6:-6, :] + self.pred)
+    def complex_loss(self, loss_choice, outputs):
+        """
+        :param loss_choice: choice of loss for underlying loss_functions method
+        :param outputs: number of outputs of the last convolution layer
+        """
+        tile_axis = tf.constant([1, 1, 1, outputs])
+        current_inputs = tf.tile(self.inputs, tile_axis)
+        current_labels = tf.tile(self.labels, tile_axis)
 
-            return tf.reduce_mean(tf.math.abs(current_labels - current_pred), axis=(1, 2))
+        current_pred = current_inputs[:, self.half_kernel:-self.half_kernel, self.half_kernel:-self.half_kernel, :] \
+            + self.pred
+
+        return self.loss_functions(loss_choice, current_labels, current_pred, (1, 2))

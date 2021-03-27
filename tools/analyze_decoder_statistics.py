@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
     # open decoded YUV file with switchable filter implementation
     path_to_sequence = os.path.join(stats_cfg.experiments_dir, stats_cfg.sequence)
-    deco = VideoYUV(os.path.join(path_to_sequence, stats_cfg.encoder_cfg, "deco-nn_" + str(stats_cfg.qp) + ".yuv"),
+    deco = VideoYUV(os.path.join(path_to_sequence, stats_cfg.encoder_cfg, f"deco-nn_{stats_cfg.qp}.yuv"),
                     stats_cfg.size[0], stats_cfg.size[1], stats_cfg.deco_bitdepth)
 
     # put all frames in buffer array
@@ -64,7 +64,7 @@ if __name__ == "__main__":
     red = np.array([255, 0, 0])
 
     # read log file and extract decoder statistics
-    decoder_log = os.path.join(path_to_sequence, stats_cfg.encoder_cfg, "decoder-nn_" + str(stats_cfg.qp) + ".log")
+    decoder_log = os.path.join(path_to_sequence, stats_cfg.encoder_cfg, f"decoder-switchable_{stats_cfg.qp}.log")
     hit_lines = list(filter(lambda l: l[:1].isdigit(), [line.rstrip('\n') for line in open(decoder_log)]))
 
     for line in hit_lines:
@@ -84,10 +84,10 @@ if __name__ == "__main__":
         deco_buffer[poc][ly:ly + height, lx + width - 1, :] = red if hit_status else blue
 
     # write frames and hit ratio statistics to results directory
-    results_subdir = f"{stats_cfg.sequence}-{stats_cfg.encoder_cfg}"
-    os.makedirs(os.path.join(stats_cfg.results_dir, results_subdir), exist_ok=True)
+    results_subdir = os.path.join("decoder-stats", f"{stats_cfg.sequence}-{stats_cfg.encoder_cfg}")
+    os.makedirs(os.path.join(stats_cfg.results_dir, results_subdir, "frames"), exist_ok=True)
 
     for i, frame in enumerate(deco_buffer):
-        imwrite(os.path.join(stats_cfg.results_dir, results_subdir, f'{i}.png'), deco_buffer[i])
+        imwrite(os.path.join(stats_cfg.results_dir, results_subdir, "frames", f"{i}.png"), deco_buffer[i])
     with open(os.path.join(stats_cfg.results_dir, results_subdir, "hit_ratio.txt"), 'a') as out_file:
-        out_file.write("The overall hit ratio is: " + str(round(hit_mc/len(hit_lines)*100, 2)) + "%\n")
+        out_file.write(f"The overall hit ratio is: {hit_mc/len(hit_lines)*100:.2f} %\n")

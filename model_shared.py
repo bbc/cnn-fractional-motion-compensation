@@ -28,8 +28,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-from utils import read_shared_data, read_shared_testdata, \
-    calculate_batch_number_nested, calculate_test_error, save_results
+from utils import read_shared_data, read_shared_testdata, calculate_batch_number, calculate_test_error, save_results
 from model_base import BaseCNN
 import time
 import os
@@ -66,7 +65,7 @@ class SharedBaseCNN(BaseCNN):
         global_step = self.load(self.subdirectory())
 
         # calculate number of training / validation batches for each block size per fractional position
-        batch_train, batch_val = calculate_batch_number_nested(train_data, val_data, self.cfg.batch_size)
+        batch_train, batch_val = calculate_batch_number(train_data, val_data, self.cfg.batch_size, nested=True)
 
         start_epoch = global_step // sum([x*15 for x in batch_train])
         print("Training %s network, from epoch %d" % (self.cfg.model_name.upper(), start_epoch))
@@ -100,17 +99,25 @@ class SharedBaseCNN(BaseCNN):
                 break
 
     def test(self):
+        """
+        Testing procedure for the CNN model: read dataset, initialize variables, load model checkpoint,
+                                              test model on different block sizes,
+                                              calculate SAD loss and compare to VVC,
+                                              save results to specified directory
+        """
         test_data, test_label, test_sad = read_shared_testdata(self.cfg.test_dataset_dir)
 
         tf.global_variables_initializer().run()
 
-        # load model if possible
-        _ = self.load(self.subdirectory())
+        # load model
+        global_step = self.load(self.subdirectory())
+        if not global_step:
+            raise SystemError("Failed to load a trained model!")
 
         print("Testing %s network" % self.cfg.model_name.upper())
 
         # Run test, per block size and fractional position
-        error_pred, error_vvc, error_blocks = ([] for _ in range(3))
+        error_pred, error_vvc, error_switch = ([] for _ in range(3))
         for block in test_data:
             for i, frac in enumerate(test_data[block]):
                 batch_test = math.ceil(len(test_data[block][frac]) / self.cfg.batch_size)
@@ -119,25 +126,37 @@ class SharedBaseCNN(BaseCNN):
                 for idx in range(batch_test):
                     feed_dict = self.shared_feed_dict(test_data[block][frac], test_label[block][frac], idx, i)
                     res = self.sess.run([self.pred], feed_dict=feed_dict)
-                    result = np.vstack([result, res[0] + feed_dict[self.inputs][:, 6:-6, 6:-6, :]]) if result.size \
-                        else res[0] + feed_dict[self.inputs][:, 6:-6, 6:-6, :]
+                    cropped_input = feed_dict[self.inputs][:, self.half_kernel:-self.half_kernel,
+                                                           self.half_kernel:-self.half_kernel, :]
+                    result = np.vstack([result, res[0] + cropped_input]) if result.size else res[0] + cropped_input
 
                 # calculate SAD NN loss and compare it to VVC loss
-                nn_cost, vvc_cost, switch_cost = calculate_test_error(result, test_label[block][frac],
-                                                                      test_sad[block][frac])
+                nn_cost, vvc_cost, switch_cost = calculate_test_error(result,
+                                                                      test_label[block][frac], test_sad[block][frac])
                 error_pred.append(nn_cost)
                 error_vvc.append(vvc_cost)
-                error_blocks.append(switch_cost)
+                error_switch.append(switch_cost)
 
         save_results(self.cfg.results_dir, self.cfg.model_name, self.subdirectory(),
-                     error_pred, error_vvc, error_blocks)
+                     error_pred, error_vvc, error_switch)
 
     def subdirectory(self):
+        """
+        Model subdirectory details
+        """
         return os.path.join(self.cfg.model_name, self.cfg.dataset_dir.split("/")[1])
 
     def shared_feed_dict(self, inputs, labels, i, subset):
+        """
+        Method that prepares a batch of inputs / labels to be fed into the shared model
+        :param inputs: input data
+        :param labels: label data
+        :param i: index pointing to the current position within the data
+        :param subset: index indicating which branch of the output layer to update
+        :return a batch-sized dictionary of inputs / labels / subset / batch_size
+        """
         feed_dict = self.prepare_feed_dict(inputs, labels, i)
-        feed_dict.update({self.subset: subset, self.batch_size: len(inputs)})
+        feed_dict.update({self.subset: subset, self.batch_size: len(feed_dict[self.inputs])})
         return feed_dict
 
 
@@ -158,6 +177,9 @@ class SharedCNN(SharedBaseCNN):
                                   initializer=tf.contrib.layers.variance_scaling_initializer())
         }
 
+        # parameter half_kernel needed for residual learning
+        self.calculate_half_kernel_size()
+
         self.pred = self.linear_model()
 
         self.loss = self.calculate_loss()
@@ -167,7 +189,7 @@ class SharedCNN(SharedBaseCNN):
         self.saver = tf.train.Saver()
 
     def calculate_loss(self):
-        cost = self.loss_functions("complex", 15)
+        cost = self.complex_loss(self.cfg.loss, self.weights[list(self.weights.keys())[-1]].get_shape()[-1].value)
 
         # Update the branch of the subset
         cost = tf.slice(cost, [0, self.subset], [self.batch_size, 1])

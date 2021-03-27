@@ -41,8 +41,9 @@ epoch = 1000                                        # Number of epochs
 early_stopping = 50                                 # Threshold value for early stopping of algorithm
 batch_size = 32                                     # The size of batch inputs
 learning_rate = 1e-4                                # The learning rate of the optimising algorithm
+loss = "SAD"                                        # Loss function to be optimized (SAD or MSE)
 
-# If needed
+# If needed for model configuration
 fractional_pixel = "x,y"                            # x,y pair of the interpolated fractional pixel [0,4 , ..., 12,12]
 qp = 27                                             # Quantization Parameter of produced dataset [22, 27, 32, 37]
 gradient_clip = 5.0                                 # Gradient clipping by norm threshold

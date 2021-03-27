@@ -36,11 +36,10 @@ import argparse
 from utils import VideoYUV, import_path, frac_positions, block_sizes, interp_filtering
 
 
-def write_dataset(path, name, seq, seq_qp, seq_inputs, seq_labels, seq_sad):
+def write_dataset(path, seq, seq_qp, seq_inputs, seq_labels, seq_sad):
     """
     Write dictionaries of inputs, labels, SAD loss values into an h5py dataset
     :param path: dataset directory
-    :param name: dataset name
     :param seq: name of the video sequence used for creating the dataset
     :param seq_qp: Quantization Parameter (QP) of the compressed video sequence
     :param seq_inputs: dictionary of rectangular reference (coded) input blocks,
@@ -50,15 +49,13 @@ def write_dataset(path, name, seq, seq_qp, seq_inputs, seq_labels, seq_sad):
     :param seq_sad: dictionary of Sum of Absolute Differences (SAD) losses between VVC coded blocks and to-be-coded
                     blocks, grouped by fractional positions and block sizes
     """
-    directory = os.path.join(path, name)
-    os.makedirs(directory, exist_ok=True)
-
-    filename = seq + "_" + str(seq_qp) + ".hdf5"
+    os.makedirs(path, exist_ok=True)
+    filename = f"{seq}_{seq_qp}.hdf5"
 
     create_ds_args = {'compression': "gzip", 'shuffle': True, 'fletcher32': True}
-    dicttoh5(seq_inputs, os.path.join(directory, filename), "inputs", create_dataset_args=create_ds_args)
-    dicttoh5(seq_labels, os.path.join(directory, filename), "labels", "a", create_dataset_args=create_ds_args)
-    dicttoh5(seq_sad, os.path.join(directory, filename), "sad_loss", "a", create_dataset_args=create_ds_args)
+    dicttoh5(seq_inputs, os.path.join(path, filename), "inputs", create_dataset_args=create_ds_args)
+    dicttoh5(seq_labels, os.path.join(path, filename), "labels", "a", create_dataset_args=create_ds_args)
+    dicttoh5(seq_sad, os.path.join(path, filename), "sad_loss", "a", create_dataset_args=create_ds_args)
 
 
 if __name__ == "__main__":
@@ -71,7 +68,7 @@ if __name__ == "__main__":
 
     # open original (uncompressed) YUV video sequence
     path_to_sequence = os.path.join(data_cfg.experiment_path, data_cfg.sequence)
-    orig = VideoYUV(os.path.join(path_to_sequence, "orig.yuv"), data_cfg.size[0], data_cfg.size[1],
+    orig = VideoYUV(os.path.join(path_to_sequence, "original.yuv"), data_cfg.size[0], data_cfg.size[1],
                     data_cfg.orig_bitdepth)
 
     # create datasets per specified QPs
@@ -84,10 +81,10 @@ if __name__ == "__main__":
 
         # open the decoded YUV video sequence and filter the encoder log file for details on fractional blocks
         deco_buffer, orig_buffer = ([] for i in range(2))
-        deco = VideoYUV(os.path.join(path_to_sequence, data_cfg.encoder_cfg, "deco_" + str(qp) + ".yuv"),
+        deco = VideoYUV(os.path.join(path_to_sequence, data_cfg.encoder_cfg, f"decoded_{qp}.yuv"),
                         data_cfg.size[0], data_cfg.size[1], data_cfg.deco_bitdepth)
 
-        encoder_log = os.path.join(path_to_sequence, data_cfg.encoder_cfg, "encoder_" + str(qp) + ".log")
+        encoder_log = os.path.join(path_to_sequence, data_cfg.encoder_cfg, f"encoder_{qp}.log")
         encoder_lines = list(filter(lambda l: l[:1].isdigit(), [line.rstrip('\n') for line in open(encoder_log)]))
 
         while 1:
@@ -155,5 +152,5 @@ if __name__ == "__main__":
                 break
 
         # open and fill the hdf5 file with inputs, labels, sad_losses
-        dataset_dir = f"{data_cfg.sequence}-{data_cfg.encoder_cfg}"
-        write_dataset(data_cfg.dataset_path, dataset_dir, data_cfg.sequence, qp, inputs, labels, sad_loss)
+        dataset_dir = os.path.join(data_cfg.dataset_path, f"{data_cfg.sequence}-{data_cfg.encoder_cfg}")
+        write_dataset(dataset_dir, data_cfg.sequence, qp, inputs, labels, sad_loss)

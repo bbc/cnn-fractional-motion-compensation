@@ -1,2 +1,6 @@
-# Auto detect text files and perform LF normalization
+# Set the default behavior for all files
 * text=auto
+
+# Convert to LF line endings for git files
+*.git* text eol=lf
+*.patch text eol=lf

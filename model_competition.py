@@ -29,7 +29,7 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 from utils import read_shared_data, read_combined_data, read_combined_testdata, \
-    calculate_batch_number_nested, calculate_test_error, save_results
+    calculate_batch_number, calculate_test_error, save_results
 from model_base import BaseCNN
 import time
 import os
@@ -70,7 +70,7 @@ class CompetitionBaseCNN(BaseCNN):
         global_step = self.load(self.subdirectory())
 
         # calculate number of training / validation batches for each block size per fractional position
-        batch_train, batch_val = calculate_batch_number_nested(train_data_sub, val_data_sub, self.cfg.batch_size)
+        batch_train, batch_val = calculate_batch_number(train_data_sub, val_data_sub, self.cfg.batch_size, nested=True)
 
         start_epoch = global_step // sum([x*15 for x in batch_train])
         print("Training %s network, from epoch %d" % (self.cfg.model_name.upper(), start_epoch))
@@ -142,12 +142,20 @@ class CompetitionBaseCNN(BaseCNN):
                 break
 
     def test(self):
+        """
+        Testing procedure for the CNN model: read dataset, initialize variables, load model checkpoint,
+                                              test model on different block sizes,
+                                              calculate SAD loss and compare to VVC,
+                                              save results to specified directory
+        """
         test_data, test_label, test_sad = read_combined_testdata(self.cfg.test_dataset_dir)
 
         tf.global_variables_initializer().run()
 
-        # load model if possible
-        _ = self.load(self.subdirectory())
+        # load model
+        global_step = self.load(self.subdirectory())
+        if not global_step:
+            raise SystemError("Failed to load a trained model!")
 
         print("Testing %s network" % self.cfg.model_name.upper())
 
@@ -160,8 +168,9 @@ class CompetitionBaseCNN(BaseCNN):
             for idx in range(batch_test):
                 feed_dict = self.competition_feed_dict(test_data[block], test_label[block], test_sad[block], idx, 2, 0)
                 res = self.sess.run([self.pred], feed_dict=feed_dict)
-                result = np.vstack([result, res[0] + feed_dict[self.inputs][:, 6:-6, 6:-6, :]]) if result.size else \
-                    res[0] + feed_dict[self.inputs][:, 6:-6, 6:-6, :]
+                cropped_input = feed_dict[self.inputs][:, self.half_kernel:-self.half_kernel,
+                                                       self.half_kernel:-self.half_kernel, :]
+                result = np.vstack([result, res[0] + cropped_input]) if result.size else res[0] + cropped_input
 
             # calculate SAD NN loss and compare it to VVC loss
             nn_cost, vvc_cost, switch_cost = calculate_test_error(result, test_label[block], test_sad[block])
@@ -173,13 +182,26 @@ class CompetitionBaseCNN(BaseCNN):
                      error_pred, error_vvc, error_blocks)
 
     def subdirectory(self):
+        """
+        Model subdirectory details
+        """
         return os.path.join(self.cfg.model_name, self.cfg.dataset_dir.split("/")[1])
 
     def competition_feed_dict(self, inputs, labels, sad, i, epoch, subset):
+        """
+        Method that prepares a batch of inputs / labels to be fed into the competition model
+        :param inputs: input data
+        :param labels: label data
+        :param sad: SAD loss data
+        :param i: index pointing to the current position within the data
+        :param epoch: current epoch number, needed for choosing the training method in the framework
+        :param subset: index indicating which branch of the output layer to update
+        :return a batch-sized dictionary of inputs / labels / subset / batch_size
+        """
         batch_sad = sad[i * self.cfg.batch_size: (i + 1) * self.cfg.batch_size]
         feed_dict = self.prepare_feed_dict(inputs, labels, i)
         feed_dict.update({self.vvc_loss: batch_sad, self.epoch: epoch,
-                          self.subset: subset, self.batch_size: len(inputs)})
+                          self.subset: subset, self.batch_size: len(feed_dict[self.inputs])})
         return feed_dict
 
 
@@ -204,6 +226,9 @@ class CompetitionCNN(CompetitionBaseCNN):
                                   initializer=tf.contrib.layers.variance_scaling_initializer())
         }
 
+        # parameter half_kernel needed for residual learning
+        self.calculate_half_kernel_size()
+
         self.pred = self.linear_model()
 
         self.loss = self.calculate_loss()
@@ -217,7 +242,7 @@ class CompetitionCNN(CompetitionBaseCNN):
         self.saver = tf.train.Saver()
 
     def calculate_loss(self):
-        cost = self.loss_functions("complex", 15)
+        cost = self.complex_loss(self.cfg.loss, self.weights[list(self.weights.keys())[-1]].get_shape()[-1].value)
 
         def vvc_competition():
             # find minimum loss across branches for each block in batch
