@@ -1,0 +1,17 @@
+version: '2.3'
+
+services:
+
+  cnn-fractional-motion-compensation:
+    image: cnn-fractional-motion-compensation
+    container_name: cnn-fractional-motion-compensation
+    working_dir: /cnn-fractional-motion-compensation
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+
+    volumes:
+      - ../:/cnn-fractional-motion-compensation
+
+    command: tail /dev/null -f
+

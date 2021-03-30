@@ -1,0 +1,6 @@
+numpy~=1.19.4
+tensorflow-gpu~=1.14.0
+pandas~=0.24.2
+imageio~=2.5.0
+silx~=0.13.2
+
