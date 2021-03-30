@@ -58,7 +58,7 @@ available on BBC Taster.
 The software in this repository presents methods from:
 - ***Improved CNN-based Learning of Interpolation Filters for Low-Complexity Inter Prediction in Video Coding***,
 - ***Interpreting CNN for Low Complexity Learned Sub-pixel Motion Compensation in Video Coding***,
-  available at [IEEE Xplore](https://ieeexplore.ieee.org/document/9191193) and [arXiv](https://arxiv.org/abs/2006.06392).
+  available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9191193) and [arXiv](https://arxiv.org/abs/2006.06392).
 
 Please cite this work as:
 
