@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
     # open decoded YUV file with switchable filter implementation
     path_to_sequence = os.path.join(stats_cfg.experiments_dir, stats_cfg.sequence)
-    deco = VideoYUV(os.path.join(path_to_sequence, stats_cfg.encoder_cfg, f"deco-nn_{stats_cfg.qp}.yuv"),
+    deco = VideoYUV(os.path.join(path_to_sequence, stats_cfg.encoder_cfg, f"decoded-switchable_{stats_cfg.qp}.yuv"),
                     stats_cfg.size[0], stats_cfg.size[1], stats_cfg.deco_bitdepth)
 
     # put all frames in buffer array
