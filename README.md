@@ -60,20 +60,31 @@ The software in this repository presents methods from:
 - ***Interpreting CNN for Low Complexity Learned Sub-pixel Motion Compensation in Video Coding***,
   available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9191193) and [arXiv](https://arxiv.org/abs/2006.06392).
 
-Please cite this work as:
+[comment]: <> (Please cite this work as:)
 
-```
-@inproceedings{Murn2020,
-  author={L. {Murn} and S. {Blasi} and A. F. {Smeaton} and N. E. {O’Connor} and M. {Mrak}},
-  booktitle={2020 IEEE International Conference on Image Processing (ICIP)}, 
-  title={Interpreting CNN For Low Complexity Learned Sub-Pixel Motion Compensation In Video Coding}, 
-  year={2020},
-  volume={},
-  number={},
-  pages={798-802},
-  doi={10.1109/ICIP40778.2020.9191193}
-}
-```
+[comment]: <> (```)
+
+[comment]: <> (@inproceedings{Murn2020,)
+
+[comment]: <> (  author={L. {Murn} and S. {Blasi} and A. F. {Smeaton} and N. E. {O’Connor} and M. {Mrak}},)
+
+[comment]: <> (  booktitle={2020 IEEE International Conference on Image Processing &#40;ICIP&#41;}, )
+
+[comment]: <> (  title={Interpreting CNN For Low Complexity Learned Sub-Pixel Motion Compensation In Video Coding}, )
+
+[comment]: <> (  year={2020},)
+
+[comment]: <> (  volume={},)
+
+[comment]: <> (  number={},)
+
+[comment]: <> (  pages={798-802},)
+
+[comment]: <> (  doi={10.1109/ICIP40778.2020.9191193})
+
+[comment]: <> (})
+
+[comment]: <> (```)
 
 ## How to use
 
@@ -191,7 +202,11 @@ python main.py -c model-configs/[model-name].py -a [train/test]
 
 ### Applying the learned filters
 In order to integrate the learned interpolation filters into VTM 6.0, their coefficients need to be extracted 
-from the trained models. After training a certain architecture on a dataset, run the commands:
+from the trained models, as visualised:
+
+![filter-extraction]
+
+After training a certain architecture on a dataset, run the commands:
 
 ```bash
 cd tools
@@ -201,6 +216,8 @@ python load_learned_filters.py -m [model]
 An array of filter coefficients will be stored in the results directory, as defined in the model configuration file.
 Copy the array to ```VVCSoftware_VTM/source/Lib/CommonLib/InterpolationFilter.cpp``` in the patched VTM 6.0 codec 
 and run the encoder with the same command arguments as specified in [Pre-trained models](#pre-trained-models).
+
+[filter-extraction]: readme-resources/filter-extraction.png
 
 ### Analyzing the usage of the learned filters
 After implementing the learned filters in the modified VTM 6.0 codec, a statistics collector macro

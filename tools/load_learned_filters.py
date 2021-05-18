@@ -152,45 +152,30 @@ if __name__ == '__main__':
 
             # with a multi-layer CNN
             if len(cnn_model.weights) > 1:
-                # transform the final layer vector into a 3D matrix
-                final_layer = np.reshape(weight_values[-1], (w_shape[0] * w_shape[1], w_shape[2], w_shape[3]))
-                final_layer = np.transpose(final_layer, (1, 0, 2))
-                weight_values[-1] = final_layer
+                # transpose each layer before last and reshape the final layer vector into a 3D matrix
+                for i in range(len(weight_values)-1):
+                    weight_values[i] = np.transpose(weight_values[i])
+                weight_values[-1] = np.reshape(weight_values[-1], (w_shape[0] * w_shape[1], w_shape[2], w_shape[3]))
 
                 # get the master weight matrix that contains all matrix multiplication values
-                l_master = weight_values[0]
-                for i, values in enumerate(weight_values[1:]):
-                    if i == len(weight_values) - 2:
-                        l_master = np.einsum("ij,jkl->ikl", l_master, values)
-                    else:
-                        l_master = np.dot(l_master, values)
+                l_master = weight_values[-1]
+                for values in reversed(weight_values[:-1]):
+                    l_master = np.einsum("ijk,jl->ilk", l_master, values)
+                l_master = np.reshape(l_master,
+                                      (l_master.shape[0], weight_shapes[0][0], weight_shapes[0][1], l_master.shape[-1]))
 
-                # create matrix of minimum input size to neural network, with labels for each position in the grid
-                # extract patches from the matrix revealing where input values were copied to before the 1st convolution
-                increment = np.reshape(range(kernel ** 2), (1, kernel, kernel, 1))
-                increment = tf.extract_image_patches(
-                    images=increment,
-                    ksizes=[1, weight_shapes[0][0], weight_shapes[0][1], 1], strides=[1, 1, 1, 1], rates=[1, 1, 1, 1],
-                    padding='VALID').eval()
-                # final input matrix that contains info for all positions from a kernel matrix
-                # that each coefficient from the master weight matrix will be applied to
-                increment = np.reshape(increment, (increment.shape[0] * increment.shape[1] * increment.shape[2],
-                                                   increment.shape[3]))
-
-                # create the final kernel matrix
-                # values are obtained by summing the correct values from the master weight matrix
-                # (the info on which values contribute to each position is stored in the increment matrix)
-                all_coefficients = np.zeros((kernel ** 2, weight_shapes[-1][-1]))
-                for i, j, k in product(range(increment.shape[0]), range(increment.shape[1]),
-                                       range(weight_shapes[-1][-1])):
-                    all_coefficients[increment[i, j], k] += l_master[j, i, k]
+                # create the final kernel matrix by adding coefficients from the master weight matrix
+                # to overlapping patch positions within the kernel
+                all_coefficients = np.zeros((kernel, kernel, weight_shapes[-1][-1]))
+                for i in range(all_coefficients.shape[-1]):
+                    for j in range(l_master.shape[0]):
+                        all_coefficients[j // 5:j // 5 + 9, j % 5:j % 5 + 9, i] += l_master[j, :, :, i]
 
             # with a single-layer CNN, directly use the coefficients
             else:
-                all_coefficients = np.reshape(weight_values[0], weight_shapes[0])
+                all_coefficients = np.reshape(weight_values[0], (kernel, kernel, weight_shapes[-1][-1]))
 
-            # reshape the matrix and add 1 to the central coefficient because the network learns residuals
-            all_coefficients = np.reshape(all_coefficients, (kernel, kernel, weight_shapes[-1][-1]))
+            # add 1 to the central coefficient because the network learns residuals
             for k in range(weight_shapes[-1][-1]):
                 all_coefficients[all_coefficients.shape[0] // 2, all_coefficients.shape[1] // 2, k] += 1
 
