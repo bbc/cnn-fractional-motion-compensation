@@ -1,6 +1,4 @@
 # Interpreting super-resolution CNNs for sub-pixel motion compensation in video coding
-| ![Luka Murn][LukaMurn-photo] | ![Saverio Blasi][SaverioBlasi-photo] | ![Alan F. Smeaton][AlanSmeaton-photo]  | ![Noel E. O’Connor][NoelOConnor-photo] | ![Marta Mrak][MartaMrak-photo] |
-|:-:|:-:|:-:|:-:|:-:|
 | [Luka Murn][LukaMurn-web]  | [Saverio Blasi][SaverioBlasi-web] | [Alan F. Smeaton][AlanSmeaton-web] | [Noel E. O’Connor][NoelOConnor-web] | [Marta Mrak][MartaMrak-web] |
 
 [LukaMurn-web]: https://www.bbc.co.uk/rd/people/luka-murn
@@ -8,26 +6,6 @@
 [MartaMrak-web]: https://www.bbc.co.uk/rd/people/marta-mrak
 [AlanSmeaton-web]: https://www.insight-centre.org/users/alan-smeaton
 [NoelOConnor-web]: https://www.insight-centre.org/our-team/prof-noel-oconnor/
-
-[LukaMurn-photo]: readme-resources/authors/LukaMurn.jpg
-[SaverioBlasi-photo]: readme-resources/authors/SaverioBlasi.jpg
-[MartaMrak-photo]: readme-resources/authors/MartaMrak.jpg
-[AlanSmeaton-photo]: readme-resources/authors/AlanFSmeaton.jpg
-[NoelOConnor-photo]: readme-resources/authors/NoelEOConnor.jpg
-
-A collaboration between:
-
-| ![logo-bbc] | ![logo-dcu] | ![logo-insight] |
-|:-:|:-:|:-:|
-| [BBC Research & Development][bbc-web] | [Dublin City University (DCU)][dcu-web] | [Insight Centre for Data Analytics][insight-web] |
-
-[bbc-web]: https://www.bbc.co.uk/rd
-[insight-web]: https://www.insight-centre.org/
-[dcu-web]: http://www.dcu.ie/
-
-[logo-bbc]: readme-resources/logos/bbcrd.png  "BBC Research & Development"
-[logo-insight]: readme-resources/logos/insight.png "Insight Centre for Data Analytics"
-[logo-dcu]: readme-resources/logos/dcu.png "Dublin City University"
 
 ![Hits](https://hitcounter.pythonanywhere.com/count/tag.svg?url=https%3A%2F%2Fgithub.com%2Fbbc%2Fcnn-fractional-motion-compensation)
 
@@ -56,35 +34,37 @@ available on BBC Taster.
 
 ## Publications
 The software in this repository presents methods from:
-- ***Improved CNN-based Learning of Interpolation Filters for Low-Complexity Inter Prediction in Video Coding***,
+- ***Improved CNN-based Learning of Interpolation Filters for Low-Complexity Inter Prediction in Video Coding***, 
+  to be published in IEEE Open Journal of Signal Processing Special Issue on Applied AI and 
+  Machine Learning for Video Coding and Streaming;
 - ***Interpreting CNN for Low Complexity Learned Sub-pixel Motion Compensation in Video Coding***,
   available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9191193) and [arXiv](https://arxiv.org/abs/2006.06392).
 
-[comment]: <> (Please cite this work as:)
+Please cite this work as:
 
-[comment]: <> (```)
+```
 
-[comment]: <> (@inproceedings{Murn2020,)
+@inproceedings{Murn2020,
 
-[comment]: <> (  author={L. {Murn} and S. {Blasi} and A. F. {Smeaton} and N. E. {O’Connor} and M. {Mrak}},)
+  author={L. {Murn} and S. {Blasi} and A. F. {Smeaton} and N. E. {O’Connor} and M. {Mrak}},
 
-[comment]: <> (  booktitle={2020 IEEE International Conference on Image Processing &#40;ICIP&#41;}, )
+  booktitle={2020 IEEE International Conference on Image Processing (ICIP)}, 
 
-[comment]: <> (  title={Interpreting CNN For Low Complexity Learned Sub-Pixel Motion Compensation In Video Coding}, )
+  title={Interpreting CNN For Low Complexity Learned Sub-Pixel Motion Compensation In Video Coding}, 
 
-[comment]: <> (  year={2020},)
+  year={2020},
 
-[comment]: <> (  volume={},)
+  volume={},
 
-[comment]: <> (  number={},)
+  number={},
 
-[comment]: <> (  pages={798-802},)
+  pages={798-802},
 
-[comment]: <> (  doi={10.1109/ICIP40778.2020.9191193})
+  doi={10.1109/ICIP40778.2020.9191193}
 
-[comment]: <> (})
+}
 
-[comment]: <> (```)
+```
 
 ## How to use
 
@@ -131,6 +111,9 @@ To run the modified VTM encoder, the following command arguments need to be adde
 ```bash
 --Triangle=0, --Affine=0, --DMVR=0, --BIO=0, --WeightedPredP=0, --WeightedPredB=0, --MHIntra=0, --SBT=0, --MMVD=0, --SMVD=0, --IMV=0, --SubPuMvp=0, --TMVPMode=0
 ```
+
+The coding performance of the pre-trained models needs to be compared with the anchor generated 
+with the same command arguments and encoding restrictions, with the macro **SWITCH_IF** turned off.
 
 ### Data preparation
 Training data is generated from a common test video sequence in VVC, *BlowingBubbles*.
@@ -216,6 +199,8 @@ python load_learned_filters.py -m [model]
 An array of filter coefficients will be stored in the results directory, as defined in the model configuration file.
 Copy the array to ```VVCSoftware_VTM/source/Lib/CommonLib/InterpolationFilter.cpp``` in the patched VTM 6.0 codec 
 and run the encoder with the same command arguments as specified in [Pre-trained models](#pre-trained-models).
+An anchor needs to be generated with the same command arguments and encoding restrictions.
+
 
 [filter-extraction]: readme-resources/filter-extraction.png
 
@@ -266,7 +251,21 @@ research and innovation programme under the Marie Skłodowska Curie grant agreem
 [JOLT-web]: http://joltetn.eu/
 [EU-web]: https://ec.europa.eu/programmes/horizon2020/en
 
+A collaboration between:
+
+| ![logo-bbc] | ![logo-dcu] | ![logo-insight] |
+|:-:|:-:|:-:|
+| [BBC Research & Development][bbc-web] | [Dublin City University (DCU)][dcu-web] | [Insight Centre for Data Analytics][insight-web] |
+
+[bbc-web]: https://www.bbc.co.uk/rd
+[insight-web]: https://www.insight-centre.org/
+[dcu-web]: http://www.dcu.ie/
+
+[logo-bbc]: readme-resources/logos/bbcrd.png  "BBC Research & Development"
+[logo-insight]: readme-resources/logos/insight.png "Insight Centre for Data Analytics"
+[logo-dcu]: readme-resources/logos/dcu.png "Dublin City University"
+
 ## Contact
 If you have any general questions about our work or code which may be of interest to other researchers, 
 please use the [public issues section](https://github.com/bbc/cnn-fractional-motion-compensation/issues) 
-of this GitHub repository. Alternatively, drop us an e-mail at <mailto:luka.murn@bbc.co.uk>.
+of this GitHub repository. Alternatively, e-mail us at <mailto:luka.murn@bbc.co.uk>.
