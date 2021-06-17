@@ -10,17 +10,19 @@
 ![Hits](https://hitcounter.pythonanywhere.com/count/tag.svg?url=https%3A%2F%2Fgithub.com%2Fbbc%2Fcnn-fractional-motion-compensation)
 
 ## Description
-The versatility of recent machine learning approaches makes them ideal for improvement of
-next generation video compression solutions. Unfortunately, these approaches typically bring 
-significant increases in computational complexity and are difficult to interpret into explainable models, 
-affecting their potential for implementation within practical video coding applications. 
-This work introduces a novel neural network-based inter-prediction scheme, which improves 
-the interpolation of reference samples needed for fractional precision motion compensation. 
-The approach provides a practical solution based on simplified, unified and interpreted trained networks, 
-which is easy to use alongside conventional video coding schemes. 
-When implemented in the context of the state-of-the-art Versatile Video Coding (VVC) test model, 
-up to 5.54% BD-rate savings can be achieved for single sequences, while the complexity of 
-the learned interpolation schemes is significantly reduced compared to the interpolation with full CNNs.
+The versatility of recent machine learning approaches makes them ideal for improvement of 
+next generation video compression solutions. Unfortunately, these approaches typically bring significant increases 
+in computational complexity and are difficult to interpret into explainable models, affecting their potential 
+for implementation within practical video coding applications. This paper introduces 
+a novel explainable neural network-based inter-prediction scheme, to improve the interpolation of reference samples 
+needed for fractional precision motion compensation. The approach requires a single neural network to be trained 
+from which a full quarter-pixel interpolation filter set is derived, as the network is easily interpretable due to 
+its linear structure. A novel training framework enables each network branch to resemble a specific fractional shift. 
+This practical solution makes it very efficient to use alongside conventional video coding schemes. When implemented in 
+the context of the state-of-the-art Versatile Video Coding (VVC) test model, 0.77%, 1.27% and 2.25% BD-rate savings 
+can be achieved on average for lower resolution sequences under the random access, low-delay B and low-delay P 
+configurations, respectively, while the complexity of the learned interpolation schemes is significantly reduced 
+compared to the interpolation with full CNNs.
 
 ![approach]
 
@@ -34,36 +36,23 @@ available on BBC Taster.
 
 ## Publications
 The software in this repository presents methods from:
-- ***Improved CNN-based Learning of Interpolation Filters for Low-Complexity Inter Prediction in Video Coding***, 
-  to be published in IEEE Open Journal of Signal Processing Special Issue on Applied AI and 
-  Machine Learning for Video Coding and Streaming;
+- ***Improved CNN-based Learning of Interpolation Filters for Low-Complexity Inter Prediction in Video Coding***,
+  available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9456071) and [arXiv](https://arxiv.org/abs/2106.08936);
 - ***Interpreting CNN for Low Complexity Learned Sub-pixel Motion Compensation in Video Coding***,
   available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9191193) and [arXiv](https://arxiv.org/abs/2006.06392).
 
 Please cite this work as:
 
 ```
-
-@inproceedings{Murn2020,
-
-  author={L. {Murn} and S. {Blasi} and A. F. {Smeaton} and N. E. {O’Connor} and M. {Mrak}},
-
-  booktitle={2020 IEEE International Conference on Image Processing (ICIP)}, 
-
-  title={Interpreting CNN For Low Complexity Learned Sub-Pixel Motion Compensation In Video Coding}, 
-
-  year={2020},
-
+@ARTICLE{Murn2021,
+  author={Murn, Luka and Blasi, Saverio Giovanni and Smeaton, Alan and Mrak, Marta},
+  journal={IEEE Open Journal of Signal Processing}, 
+  title={Improved CNN-based Learning of Interpolation Filters for Low-Complexity Inter Prediction in Video Coding}, 
+  year={2021},
   volume={},
-
   number={},
-
-  pages={798-802},
-
-  doi={10.1109/ICIP40778.2020.9191193}
-
-}
-
+  pages={1-1},
+  doi={10.1109/OJSP.2021.3089439}}
 ```
 
 ## How to use
@@ -99,7 +88,7 @@ git am -3 -k [path-to-this-repository]/vtm6.0-patch/cnn-fractional-motion-compen
 Instructions on how to build platform-specific files for the VTM reference software 
 are available in ```VVCSoftware_VTM/README.md```.
 
-### Pre-trained models
+### How to replicate results from the research papers using pre-trained models
 The coefficients of the trained neural network-based interpolation filters are already included with the applied patch.
 To enable the conditions under which the switchable filter implementation is tested, 
 the macro **SWITCH_IF**, located in ```VVCSoftware_VTM/source/Lib/CommonLib/TypeDef.h```, needs to be set to 1.
@@ -112,15 +101,16 @@ To run the modified VTM encoder, the following command arguments need to be adde
 --Triangle=0, --Affine=0, --DMVR=0, --BIO=0, --WeightedPredP=0, --WeightedPredB=0, --MHIntra=0, --SBT=0, --MMVD=0, --SMVD=0, --IMV=0, --SubPuMvp=0, --TMVPMode=0
 ```
 
-The coding performance of the pre-trained models needs to be compared with the anchor generated 
-with the same command arguments and encoding restrictions, with the macro **SWITCH_IF** turned off.
+The VTM coding performance of the pre-trained *CompetitionCNN* or *ScratchCNN* model needs to be compared with 
+the anchor generated with the same command arguments, but with the macro **SWITCH_IF** set to 0.
 
-### Data preparation
+### How to replicate results from the research papers starting anew 
+#### Data preparation
 Training data is generated from a common test video sequence in VVC, *BlowingBubbles*.
 Details on how to access this YUV sequence are described in a technical report, 
 [JVET-J1010: JVET common test conditions and software reference configurations](https://www.researchgate.net/publication/326506581_JVET-J1010_JVET_common_test_conditions_and_software_reference_configurations).
 
-### Encoding and storing data
+#### Encoding and storing data
 In order to collect data necessary for creating a dataset, 
 the video sequence first needs to be encoded in a modified VTM 6.0 environment.
 The provided patch contains an **ENCODER_DATAEXTRACTION** macro, used to print out 
@@ -151,7 +141,7 @@ experiments
 ```
 A template directory structure is provided in [experiments](./experiments).
 
-### Creating datasets
+#### Creating datasets
 To create a dataset from the coded video sequence, add its details to a file in [dataset-configs](./dataset-configs), 
 and define the dataset path.
 Details are already provided for the *BlowingBubbles* YUV sequence, and 
@@ -163,7 +153,7 @@ cd dataset-creation
 python dataset_fractional_me.py -c ../dataset-configs/[sequence-details].py
 ```
 
-### Training and testing models
+#### Training and testing models
 A number of different models are available for training purposes, as explained in the publications.
 Their architectures generally correspond to:
 
@@ -183,7 +173,7 @@ Once the datasets are created, train or test the desired model by running the fo
 python main.py -c model-configs/[model-name].py -a [train/test]
 ```
 
-### Applying the learned filters
+#### Applying the learned filters
 In order to integrate the learned interpolation filters into VTM 6.0, their coefficients need to be extracted 
 from the trained models, as visualised:
 
@@ -204,7 +194,7 @@ An anchor needs to be generated with the same command arguments and encoding res
 
 [filter-extraction]: readme-resources/filter-extraction.png
 
-### Analyzing the usage of the learned filters
+#### Analyzing the usage of the learned filters
 After implementing the learned filters in the modified VTM 6.0 codec, a statistics collector macro
 **DECODER_STATISTICS** can be enabled, to print out relevant details on the usage of said filters 
 for a particular video sequence. This macro should only be run during the decoding process. 
