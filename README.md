@@ -188,7 +188,8 @@ python load_learned_filters.py -m [model]
 
 An array of filter coefficients will be stored in the results directory, as defined in the model configuration file.
 Copy the array to ```VVCSoftware_VTM/source/Lib/CommonLib/InterpolationFilter.cpp``` in the patched VTM 6.0 codec 
-and run the encoder with the same command arguments as specified in [Pre-trained models](#pre-trained-models).
+and run the encoder with the same command arguments as specified in 
+[Pre-trained models](#how-to-replicate-results-from-the-research-papers-using-pre-trained-models).
 An anchor needs to be generated with the same command arguments and encoding restrictions.
 
 
