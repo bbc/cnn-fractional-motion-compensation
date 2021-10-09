@@ -28,11 +28,11 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-experiments_dir = "../experiments/"  # Name of experiments directory
-results_dir = "../results/"          # Name of results directory
+experiments_dir = "experiments"      # Name of experiments directory
+results_dir = "results"              # Name of results directory
 encoder_cfg = "ra_main10"            # VVC encoding configuration (ld_P_main10, ld_main10 or ra_main10)
 deco_bitdepth = 10                   # Bit depth of the decoded YUV sequence
-qp = 37                              # Quantisation Parameter (QP) for which the sequence has been trained
+qp = 27                              # Quantisation Parameter (QP) for which the sequence has been trained
 
 sequence = "blowingbubbles"          # Name of the video sequence
 size = (416, 240)                    # (width, height) of the YUV sequence

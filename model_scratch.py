@@ -144,7 +144,7 @@ class ScratchBaseCNN(BaseCNN, metaclass=ABCMeta):
         """
         Model subdirectory details
         """
-        return os.path.join(self.cfg.model_name, self.cfg.dataset_dir.split("/")[1],
+        return os.path.join(self.cfg.model_name, self.cfg.dataset_dir.split("/")[-1],
                             f"{self.cfg.fractional_pixel}-{self.cfg.qp}")
 
 

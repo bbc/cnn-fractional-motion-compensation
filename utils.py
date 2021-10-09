@@ -49,7 +49,7 @@ class VideoYUV:
         :param filename: YUV file path
         :param width: width of YUV file
         :param height: height of YUV file
-        :param bit_depth: bit depth of YUV file
+        :param bit_depth: bit depth of YUV file (up to 16)
         """
         self.width = width
         self.height = height
@@ -59,7 +59,7 @@ class VideoYUV:
     def read(self, output_depth):
         """
         Extract luma values from bitstream
-        :param output_depth: bit depth of output frame
+        :param output_depth: bit depth of output frame (up to 16)
         :return: True/False if a frame was successfully read, array of luma values at specified bit depth
         """
         if self.bit_depth <= 8:
@@ -70,7 +70,6 @@ class VideoYUV:
                 print(str(e) + " - for file " + self.f.name)
                 return False, None
             self.f.read(self.width*self.height//2)
-            return True, np.uint8(np.round(luma * 2**(output_depth - self.bit_depth)))
         elif 8 < self.bit_depth <= 16:
             raw = self.f.read(2*self.width*self.height)
             try:
@@ -79,9 +78,16 @@ class VideoYUV:
                 print(str(e) + " - for file " + self.f.name)
                 return False, None
             self.f.read(self.width*self.height)
-            return True, np.uint16(np.round(luma * 2**(output_depth - self.bit_depth)))
         else:
             print("Invalid bit depth specified!")
+            return False, None
+
+        if output_depth <= 8:
+            return True, np.uint8(np.round(luma * 2**(output_depth - self.bit_depth)))
+        elif 8 < output_depth <= 16:
+            return True, np.uint16(np.round(np.uint16(luma) * 2**(output_depth - self.bit_depth)))
+        else:
+            print("Invalid output bit depth specified!")
             return False, None
 
     def skip(self, num):
@@ -231,13 +237,13 @@ def frac_positions():
 def block_sizes(max_size):
     """
     Return all possible block sizes of an inter-predicted frame (min size is 4x8 or 8x4)
-    :param max_size: maximum exponent of the power of 2 specifying width/height (e.g. 6 = 32x32), max value is 8
+    :param max_size: maximum exponent of the power of 2 specifying width/height (e.g. 5 = 32x32), max value is 7
     :return: string list of "width x height" sizes
     """
-    if max_size > 8:
+    if max_size > 7:
         raise ValueError("Invalid max_size value specified!")
     else:
-        return [f"{2**x}x{2**y}" for x in range(2, max_size) for y in range(2, max_size) if x != 2 or y != 2]
+        return [f"{2**x}x{2**y}" for x in range(2, max_size+1) for y in range(2, max_size+1) if x != 2 or y != 2]
 
 
 def filter_coefficients(position):
@@ -304,11 +310,10 @@ def read_testdata(path, frac, kernel, model):
     inputs_dict, labels_dict, sad_dict = get_dataset_dict(path, "test")
 
     # create testing dictionaries
-    block_keys = [k for k in inputs_dict]
     test_inputs_dict, test_labels_dict, sad_loss_dict = (dict() for _ in range(3))
 
     # get inputs / labels / sad_loss for block & frac position
-    for block in block_keys:
+    for block in block_sizes(5):
         inputs = inputs_dict[block][frac]
 
         if len(inputs) == 0:
@@ -337,16 +342,15 @@ def read_shared_testdata(path):
     inputs_dict, labels_dict, sad_dict = get_dataset_dict(path, "test")
 
     # create testing dictionaries
-    block_keys = [k for k in inputs_dict]
     test_inputs_dict, test_labels_dict, sad_loss_dict = (nested_dict() for _ in range(3))
 
     # get inputs / labels / sad_loss for block & frac position
-    for block in block_keys:
+    for block in block_sizes(5):
         inputs = inputs_dict[block]
         if min(list(len(inputs[frac]) for frac in inputs)) == 0:
             continue
 
-        for frac in inputs_dict[block]:
+        for frac in frac_positions():
             test_inputs_dict[block][frac] = inputs_dict[block][frac].astype(float)
             test_labels_dict[block][frac] = labels_dict[block][frac].astype(float)
             sad_loss_dict[block][frac] = sad_dict[block][frac].astype(float)
@@ -409,11 +413,10 @@ def read_data(path, batch_size, qp, frac, kernel, model):
     inputs_dict, labels_dict, _ = get_dataset_dict(path, qp)
 
     # create training / validation dictionaries
-    block_keys = [k for k in inputs_dict]
     train_inputs_dict, train_labels_dict, val_inputs_dict, val_labels_dict = (dict() for _ in range(4))
 
     # get inputs / labels for block & frac position
-    for block in block_keys:
+    for block in block_sizes(5):
         inputs = inputs_dict[block][frac]
 
         # only use inputs that can be split 80 / 20 train / validation and fill out a batch
@@ -433,10 +436,10 @@ def read_data(path, batch_size, qp, frac, kernel, model):
         (train_inputs, train_labels), (val_inputs, val_labels) = split_data(split_percentage, inputs, labels)
 
         # put into correct dictionary entry
-        train_inputs_dict[block] = train_inputs
-        train_labels_dict[block] = train_labels
-        val_inputs_dict[block] = val_inputs
-        val_labels_dict[block] = val_labels
+        train_inputs_dict[block] = train_inputs.astype(float)
+        train_labels_dict[block] = train_labels.astype(float)
+        val_inputs_dict[block] = val_inputs.astype(float)
+        val_labels_dict[block] = val_labels.astype(float)
 
     return train_inputs_dict, train_labels_dict, val_inputs_dict, val_labels_dict
 
@@ -452,12 +455,11 @@ def read_shared_data(path, batch_size):
     inputs_dict, labels_dict, sad_dict = get_dataset_dict(path, "27")
 
     # create training / validation dictionaries
-    block_keys = [k for k in inputs_dict]
     train_inputs_dict, train_labels_dict, train_sad_dict, val_inputs_dict, val_labels_dict, val_sad_dict = \
         (nested_dict() for _ in range(6))
 
     # get inputs / labels / SAD losses for block, don't separate by frac position
-    for block in block_keys:
+    for block in block_sizes(5):
         inputs = inputs_dict[block]
 
         # find minimum input size across all fractional positions for that block size
@@ -474,7 +476,7 @@ def read_shared_data(path, batch_size):
         train_inputs, train_labels, train_sad, val_inputs, val_labels, val_sad = (dict() for _ in range(6))
 
         # shuffle datasets per fractional position and reduce each subset to the same size, then split
-        for frac in inputs:
+        for frac in frac_positions():
             inputs[frac], labels[frac], sad_loss[frac] = array_shuffle(balanced_size,
                                                                        inputs[frac], labels[frac], sad_loss[frac])
 
@@ -484,12 +486,12 @@ def read_shared_data(path, batch_size):
                 split_data(split_percentage, inputs[frac], labels[frac], sad_loss[frac])
 
             # put into correct dictionary entry
-            train_inputs_dict[block][frac] = train_inputs[frac]
-            train_labels_dict[block][frac] = train_labels[frac]
-            train_sad_dict[block][frac] = train_sad[frac]
-            val_inputs_dict[block][frac] = val_inputs[frac]
-            val_labels_dict[block][frac] = val_labels[frac]
-            val_sad_dict[block][frac] = val_sad[frac]
+            train_inputs_dict[block][frac] = train_inputs[frac].astype(float)
+            train_labels_dict[block][frac] = train_labels[frac].astype(float)
+            train_sad_dict[block][frac] = train_sad[frac].astype(float)
+            val_inputs_dict[block][frac] = val_inputs[frac].astype(float)
+            val_labels_dict[block][frac] = val_labels[frac].astype(float)
+            val_sad_dict[block][frac] = val_sad[frac].astype(float)
 
     return train_inputs_dict, train_labels_dict, train_sad_dict, val_inputs_dict, val_labels_dict, val_sad_dict
 

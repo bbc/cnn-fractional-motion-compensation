@@ -29,7 +29,7 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 from utils import read_shared_data, read_combined_data, read_combined_testdata, \
-    calculate_batch_number, calculate_test_error, save_results
+    calculate_batch_number, calculate_test_error, save_results, frac_positions
 from model_base import BaseCNN
 import time
 import os
@@ -70,9 +70,11 @@ class CompetitionBaseCNN(BaseCNN):
         global_step = self.load(self.subdirectory())
 
         # calculate number of training / validation batches for each block size per fractional position
-        batch_train, batch_val = calculate_batch_number(train_data_sub, val_data_sub, self.cfg.batch_size, nested=True)
+        batch_train, batch_val = calculate_batch_number(train_data, val_data, self.cfg.batch_size, nested=False)
+        batch_train_sub, batch_val_sub = calculate_batch_number(train_data_sub, val_data_sub,
+                                                                self.cfg.batch_size, nested=True)
 
-        start_epoch = global_step // sum([x*15 for x in batch_train])
+        start_epoch = global_step // sum(batch_train)
         print("Training %s network, from epoch %d" % (self.cfg.model_name.upper(), start_epoch))
 
         start_time = time.time()
@@ -83,7 +85,7 @@ class CompetitionBaseCNN(BaseCNN):
             if ep != 1:
                 # Run on batches of combined training inputs
                 for index, block in enumerate(train_data):
-                    for idx in range(batch_train[index] * 15):
+                    for idx in range(batch_train[index]):
                         feed_dict = self.competition_feed_dict(train_data[block], train_label[block], train_sad[block],
                                                                idx, ep, 0)
                         # Run validation to avoid possible issue in latter epochs
@@ -112,9 +114,9 @@ class CompetitionBaseCNN(BaseCNN):
             else:
                 # First epoch where each branch is trained for a particular data subset
                 # Run on batches of training inputs, per fractional position and block size
-                for index, block in enumerate(train_data_sub):
-                    for idx in range(batch_train[index]):
-                        for i, frac in enumerate(train_data_sub[block]):
+                for i, frac in enumerate(frac_positions()):
+                    for index, block in enumerate(train_data_sub):
+                        for idx in range(batch_train_sub[index]):
                             feed_dict = self.competition_feed_dict(train_data_sub[block][frac],
                                                                    train_label_sub[block][frac],
                                                                    train_sad_sub[block][frac], idx, ep, i)
@@ -125,9 +127,9 @@ class CompetitionBaseCNN(BaseCNN):
 
                 # Run on batches of validation inputs, per fractional position and block size
                 error_val_list = []
-                for index, block in enumerate(val_data_sub):
-                    for idx in range(batch_val[index]):
-                        for i, frac in enumerate(val_data_sub[block]):
+                for i, frac in enumerate(frac_positions()):
+                    for index, block in enumerate(val_data_sub):
+                        for idx in range(batch_val_sub[index]):
                             feed_dict = self.competition_feed_dict(val_data_sub[block][frac],
                                                                    val_label_sub[block][frac],
                                                                    val_sad_sub[block][frac], idx, ep, i)
@@ -185,7 +187,7 @@ class CompetitionBaseCNN(BaseCNN):
         """
         Model subdirectory details
         """
-        return os.path.join(self.cfg.model_name, self.cfg.dataset_dir.split("/")[1])
+        return os.path.join(self.cfg.model_name, self.cfg.dataset_dir.split("/")[-1])
 
     def competition_feed_dict(self, inputs, labels, sad, i, epoch, subset):
         """
@@ -261,7 +263,10 @@ class CompetitionCNN(CompetitionBaseCNN):
         # update all branches in epoch 0, update specific branch in epoch 1, update best branch(es) in other epochs
         cost = tf.cond(tf.math.greater(self.epoch, 0),
                        lambda: tf.cond(tf.math.greater(self.epoch, 1),
-                                       vvc_competition,
+                                       lambda: tf.cond(tf.cast(tf.math.floordiv(tf.math.floormod(self.epoch, 10), 5),
+                                                               tf.bool),
+                                                       vvc_competition,
+                                                       lambda: tf.reduce_min(cost, axis=1)),
                                        lambda: tf.slice(cost, [0, self.subset], [self.batch_size, 1])),
                        lambda: tf.reduce_mean(cost, axis=1))
 

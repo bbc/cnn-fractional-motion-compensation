@@ -57,7 +57,7 @@ if __name__ == "__main__":
         if not deco_ret:
             deco.close()
             break
-        deco_buffer.append(np.uint8(np.repeat(deco_frame[:, :, np.newaxis], 3, axis=2)))
+        deco_buffer.append(np.repeat(deco_frame[:, :, np.newaxis], 3, axis=2))
 
     hit_mc = 0
     blue = np.array([0, 0, 255])

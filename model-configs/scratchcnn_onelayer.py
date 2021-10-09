@@ -36,9 +36,6 @@ graphs_dir = "graphs"                               # Name of graphs directory
 
 model_name = "scratchcnn_onelayer"                  # Name of model
 
-fractional_pixel = "0,4"                            # x,y pair of the interpolated fractional pixel [0,4 , ..., 12,12]
-qp = 22                                             # Quantization Parameter of produced dataset [22, 27, 32, 37]
-
 epoch = 1000                                        # Number of epochs
 early_stopping = 50                                 # Threshold value for early stopping of algorithm
 batch_size = 32                                     # The size of batch inputs

@@ -44,6 +44,4 @@ learning_rate = 1e-4                                # The learning rate of the o
 loss = "SAD"                                        # Loss function to be optimized (SAD or MSE)
 
 # If needed for model configuration
-fractional_pixel = "x,y"                            # x,y pair of the interpolated fractional pixel [0,4 , ..., 12,12]
-qp = 27                                             # Quantization Parameter of produced dataset [22, 27, 32, 37]
 gradient_clip = 5.0                                 # Gradient clipping by norm threshold

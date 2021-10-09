@@ -39,7 +39,9 @@ The software in this repository presents methods from:
 - ***Improved CNN-based Learning of Interpolation Filters for Low-Complexity Inter Prediction in Video Coding***,
   available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9456071) and [arXiv](https://arxiv.org/abs/2106.08936);
 - ***Interpreting CNN for Low Complexity Learned Sub-pixel Motion Compensation in Video Coding***,
-  available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9191193) and [arXiv](https://arxiv.org/abs/2006.06392).
+  available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9191193) and [arXiv](https://arxiv.org/abs/2006.06392);
+- ***Interpreting Convolutional Neural Networks for Video Coding***,
+  presented at Open Source Software Competition of ACM Multimedia 2021.
 
 Please cite this work as:
 

@@ -114,7 +114,6 @@ if __name__ == '__main__':
 
     # prepare dictionaries that will store the corresponding filters
     learned_filters = nested_dict()
-    max_correlation = {k: [-1] * len(frac_positions()) for k in qp_list}
 
     for frac, qp in product(frac_xy, qp_list):
         model_cfg.fractional_pixel = frac
@@ -182,16 +181,35 @@ if __name__ == '__main__':
                 # scale coefficients so their sum equals 1
                 all_coefficients[:, :, k] *= 1 / np.sum(all_coefficients[:, :, k])
 
-        # calculate correlation of coefficients to existing vvc filters and store the best filters into a dict
-        # per fractional shift and per QP
+        # calculate correlation of coefficients to existing vvc filters
         existing_filters = vvc_filters_2d(kernel)
+        all_correlations = np.zeros((len(existing_filters), all_coefficients.shape[2]))
         for k in range(all_coefficients.shape[2]):
             nn_filter = all_coefficients[:, :, k]
             for i, vvc_filter in enumerate(existing_filters):
-                cc = zncc(vvc_filter, nn_filter)
-                if cc > max_correlation[qp][i]:
-                    max_correlation[qp][i] = cc
-                    learned_filters[qp][i] = nn_filter
+                all_correlations[i, k] = zncc(vvc_filter, nn_filter)
+
+        # remove irrelevant correlations
+        all_correlations *= all_correlations > 0.85
+
+        # store the best filters into a dict per fractional shift and per QP
+        while all_correlations.any():
+            # find filter candidates per fractional shift
+            filter_candidates = (all_correlations != 0).sum(1)
+
+            # find filters with the least amount of candidates
+            min_candidates = np.where(filter_candidates == min(cand for cand in filter_candidates if cand > 0))
+
+            # get index of the highest correlation
+            max_val_arg = np.where(all_correlations == all_correlations[min_candidates, :].max())
+            i, j = max_val_arg[0][0], max_val_arg[1][0]
+
+            # map a learned filter to a fractional shift and QP
+            learned_filters[qp][i] = all_coefficients[:, :, j]
+            all_correlations[i, :] = 0
+            all_correlations[:, j] = 0
+
+        learned_filters[qp] = {k: v for k, v in sorted(learned_filters[qp].items(), key=lambda item: item[0])}
 
     # create directories if needed
     results_subdir = os.path.join("models", model_cfg.model_name, model_cfg.dataset_dir.split('/')[1])

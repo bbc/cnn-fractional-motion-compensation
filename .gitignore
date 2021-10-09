@@ -1,2 +1,7 @@
 .idea
 __pycache__
+checkpoint
+experiments
+graphs
+results
+dataset

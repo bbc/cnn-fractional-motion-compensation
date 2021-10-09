@@ -28,7 +28,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-experiment_path = "../experiments/"  # Path to where the YUV files and log files are stored
+experiment_path = "experiments"      # Path to where the YUV files and log files are stored
 encoder_cfg = "ra_main10"            # VVC encoding configuration (for train: ld_P_main10, ra_main10; for test: test)
 orig_bitdepth = 8                    # Bit depth of the original YUV sequence
 deco_bitdepth = 10                   # Bit depth of the decoded YUV sequence
@@ -37,7 +37,7 @@ qp_list = [27]                       # List of Quantization Parameters (QPs) for
 sequence = "blowingbubbles"          # Name of the video sequence
 size = (416, 240)                    # (width, height) of the YUV sequence
 
-max_block_exp = 8                    # Maximum rectangular block size exponent (e.g. 6 = max block size of 32x32)
+max_block_exp = 5                    # Maximum rectangular block size exponent (e.g. 7 = max block size of 128x128)
 kernel_size = 13                     # Combined size of convolutional kernels (e.g. 9x9, 1x1, 5x5 = 13x13)
 
-dataset_path = "../dataset/"         # Directory where the dataset will be saved
+dataset_path = "dataset"             # Directory where the dataset will be saved

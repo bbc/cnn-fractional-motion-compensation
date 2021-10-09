@@ -28,7 +28,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-from utils import read_shared_data, read_shared_testdata, calculate_batch_number, calculate_test_error, save_results
+from utils import read_shared_data, read_shared_testdata, calculate_batch_number, \
+    calculate_test_error, save_results, frac_positions
 from model_base import BaseCNN
 import time
 import os
@@ -67,16 +68,16 @@ class SharedBaseCNN(BaseCNN):
         # calculate number of training / validation batches for each block size per fractional position
         batch_train, batch_val = calculate_batch_number(train_data, val_data, self.cfg.batch_size, nested=True)
 
-        start_epoch = global_step // sum([x*15 for x in batch_train])
+        start_epoch = global_step // sum(batch_train*15)
         print("Training %s network, from epoch %d" % (self.cfg.model_name.upper(), start_epoch))
 
         start_time = time.time()
         err_train = None
         for ep in range(start_epoch, self.cfg.epoch):
             # Run on batches of training inputs, per fractional position and block size
-            for index, block in enumerate(train_data):
-                for idx in range(batch_train[index]):
-                    for i, frac in enumerate(train_data[block]):
+            for i, frac in enumerate(frac_positions()):
+                for index, block in enumerate(train_data):
+                    for idx in range(batch_train[index]):
                         feed_dict = self.shared_feed_dict(train_data[block][frac], train_label[block][frac], idx, i)
                         _, err_train, summary = self.sess.run([self.train_op, self.loss, merged], feed_dict=feed_dict)
                         global_step += 1
@@ -84,9 +85,9 @@ class SharedBaseCNN(BaseCNN):
 
             # Run on batches of validation inputs, per fractional position and block size
             error_val_list = []
-            for index, block in enumerate(val_data):
-                for idx in range(batch_val[index]):
-                    for i, frac in enumerate(val_data[block]):
+            for i, frac in enumerate(frac_positions()):
+                for index, block in enumerate(val_data):
+                    for idx in range(batch_val[index]):
                         feed_dict = self.shared_feed_dict(val_data[block][frac], val_label[block][frac], idx, i)
                         err_valid = self.sess.run([self.loss], feed_dict=feed_dict)
                         error_val_list.append(err_valid[0])
@@ -118,8 +119,8 @@ class SharedBaseCNN(BaseCNN):
 
         # Run test, per block size and fractional position
         error_pred, error_vvc, error_switch = ([] for _ in range(3))
-        for block in test_data:
-            for i, frac in enumerate(test_data[block]):
+        for i, frac in enumerate(frac_positions()):
+            for block in test_data:
                 batch_test = math.ceil(len(test_data[block][frac]) / self.cfg.batch_size)
                 result = np.array([])
 
@@ -144,7 +145,7 @@ class SharedBaseCNN(BaseCNN):
         """
         Model subdirectory details
         """
-        return os.path.join(self.cfg.model_name, self.cfg.dataset_dir.split("/")[1])
+        return os.path.join(self.cfg.model_name, self.cfg.dataset_dir.split("/")[-1])
 
     def shared_feed_dict(self, inputs, labels, i, subset):
         """
