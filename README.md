@@ -4,7 +4,7 @@
 [LukaMurn-web]: https://www.bbc.co.uk/rd/people/luka-murn
 [SaverioBlasi-web]: https://www.bbc.co.uk/rd/people/saverio-blasi
 [MartaMrak-web]: https://www.bbc.co.uk/rd/people/marta-mrak
-[AlanSmeaton-web]: https://www.insight-centre.org/users/alan-smeaton
+[AlanSmeaton-web]: https://www.insight-centre.org/our-team/prof-alan-smeaton/
 [NoelOConnor-web]: https://www.insight-centre.org/our-team/prof-noel-oconnor/
 
 ![Hits](https://hitcounter.pythonanywhere.com/count/tag.svg?url=https%3A%2F%2Fgithub.com%2Fbbc%2Fcnn-fractional-motion-compensation)
@@ -40,7 +40,7 @@ The software in this repository presents methods from:
   available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9456071) and [arXiv](https://arxiv.org/abs/2106.08936);
 - ***Interpreting CNN for Low Complexity Learned Sub-pixel Motion Compensation in Video Coding***,
   available on [IEEE Xplore](https://ieeexplore.ieee.org/document/9191193) and [arXiv](https://arxiv.org/abs/2006.06392);
-- ***Interpreting Convolutional Neural Networks for Video Coding***,
+- ***Interpreting Super-Reolution CNNs for Sub-Pixel Motion Compensation in Video Coding***,
   presented at Open Source Software Competition of ACM Multimedia 2021.
 
 Please cite this work as:
