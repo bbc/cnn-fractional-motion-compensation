@@ -7,8 +7,6 @@
 [AlanSmeaton-web]: https://www.insight-centre.org/our-team/prof-alan-smeaton/
 [NoelOConnor-web]: https://www.insight-centre.org/our-team/prof-noel-oconnor/
 
-![Hits](https://hitcounter.pythonanywhere.com/count/tag.svg?url=https%3A%2F%2Fgithub.com%2Fbbc%2Fcnn-fractional-motion-compensation)
-
 ## Description
 The versatility of recent machine learning approaches makes them ideal for improvement of 
 next generation video compression solutions. Unfortunately, these approaches typically bring significant increases 
